@@ -19,4 +19,7 @@ interface HermesApi {
 
     @GET("v1/models")
     suspend fun getModels(): ModelListResponse
+
+    @GET("health")
+    suspend fun checkHealth(): okhttp3.ResponseBody
 }

@@ -16,6 +16,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
@@ -297,6 +300,12 @@ fun SetupScreen(onSave: (String, String) -> Unit) {
                 unfocusedIndicatorColor = MaterialTheme.colorScheme.outline
             )
         )
+        Text(
+            "Use http://10.0.2.2:PORT/ for local development in emulator.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline,
+            modifier = Modifier.align(Alignment.Start).padding(top = 4.dp)
+        )
         
         Spacer(modifier = Modifier.height(16.dp))
         
@@ -396,6 +405,10 @@ fun SettingsDialog(viewModel: HermesViewModel, onDismiss: () -> Unit) {
     val maxTokens by viewModel.maxTokens.collectAsState()
     val selectedModel by viewModel.selectedModel.collectAsState()
     val availableModels by viewModel.availableModels.collectAsState()
+    val connectionStatus by viewModel.connectionStatus.collectAsState()
+
+    var editUrl by remember { mutableStateOf(viewModel.getBaseUrl()) }
+    var editKey by remember { mutableStateOf(viewModel.getApiKey()) }
 
     val options = listOf(
         "DISABLED" to 0L,
@@ -414,6 +427,44 @@ fun SettingsDialog(viewModel: HermesViewModel, onDismiss: () -> Unit) {
         text = {
             LazyColumn(modifier = Modifier.fillMaxWidth()) {
                 item {
+                    Text("CONNECTIVITY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                    TextField(
+                        value = editUrl,
+                        onValueChange = { editUrl = it },
+                        label = { Text("BASE_URL", style = MaterialTheme.typography.labelSmall) },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        shape = RectangleShape,
+                        colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
+                    )
+                    TextField(
+                        value = editKey,
+                        onValueChange = { editKey = it },
+                        label = { Text("API_KEY", style = MaterialTheme.typography.labelSmall) },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        shape = RectangleShape,
+                        colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
+                    )
+                    
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
+                        Button(
+                            onClick = { viewModel.saveConfig(editKey, editUrl) },
+                            shape = RectangleShape,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("UPDATE CONFIG", style = MaterialTheme.typography.labelSmall)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        IconButton(onClick = { viewModel.testConnection() }) {
+                            when (connectionStatus) {
+                                is ConnectionStatus.Testing -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                is ConnectionStatus.Success -> Icon(Icons.Default.CheckCircle, contentDescription = "Success", tint = Color.Green)
+                                is ConnectionStatus.Error -> Icon(Icons.Default.Error, contentDescription = "Error", tint = Color.Red)
+                                else -> Icon(Icons.Default.Refresh, contentDescription = "Test Connection")
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
                     Text("SECURITY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,

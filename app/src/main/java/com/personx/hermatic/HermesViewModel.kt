@@ -40,6 +40,9 @@ class HermesViewModel(
     private val _availableModels = MutableStateFlow<List<ModelInfo>>(emptyList())
     val availableModels: StateFlow<List<ModelInfo>> = _availableModels
 
+    private val _connectionStatus = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Idle)
+    val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus
+
     private var currentHistory = emptyList<Message>()
     private val streamingBotResponse = MutableStateFlow<String?>(null)
 
@@ -106,6 +109,17 @@ class HermesViewModel(
         checkApiKey()
         fetchModels()
     }
+
+    fun testConnection() {
+        viewModelScope.launch {
+            _connectionStatus.value = ConnectionStatus.Testing
+            val success = repository.checkHealth()
+            _connectionStatus.value = if (success) ConnectionStatus.Success else ConnectionStatus.Error
+        }
+    }
+
+    fun getBaseUrl(): String = securityManager.getBaseUrl()
+    fun getApiKey(): String = securityManager.getApiKey() ?: ""
 
     fun sendMessage(text: String) {
         viewModelScope.launch {
@@ -174,4 +188,11 @@ sealed class HermesUiState {
     data object Idle : HermesUiState()
     data class Chatting(val history: List<Message>) : HermesUiState()
     data class Error(val message: String, val history: List<Message> = emptyList()) : HermesUiState()
+}
+
+sealed class ConnectionStatus {
+    data object Idle : ConnectionStatus()
+    data object Testing : ConnectionStatus()
+    data object Success : ConnectionStatus()
+    data object Error : ConnectionStatus()
 }
