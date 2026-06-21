@@ -494,10 +494,26 @@ fun SettingsScreen(viewModel: HermesViewModel, onBack: () -> Unit) {
                     }
                     is ConnectionStatus.Error -> {
                         val msg = (connectionStatus as ConnectionStatus.Error).message
-                        Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(bottom = 8.dp)) {
-                            Icon(Icons.Default.Error, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp).padding(top = 2.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Failure: $msg", color = Color.Red, style = MaterialTheme.typography.bodySmall)
+                        Column(modifier = Modifier.padding(bottom = 8.dp)) {
+                            Row(verticalAlignment = Alignment.Top) {
+                                Icon(Icons.Default.Error, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp).padding(top = 2.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("FAILURE", color = Color.Red, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp)
+                                    .background(Color.Red.copy(alpha = 0.1f))
+                                    .padding(8.dp)
+                            ) {
+                                Text(
+                                    text = msg,
+                                    color = Color.Red,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         }
                     }
                     else -> {}

@@ -113,12 +113,14 @@ class HermesViewModel(
     fun testConnection() {
         viewModelScope.launch {
             _connectionStatus.value = ConnectionStatus.Testing
+            val url = securityManager.getBaseUrl()
             repository.checkHealth()
                 .onSuccess {
                     _connectionStatus.value = ConnectionStatus.Success
                 }
                 .onFailure { error ->
-                    _connectionStatus.value = ConnectionStatus.Error(error.localizedMessage ?: "Unknown error")
+                    val detailedError = "[URL: $url] ${error.localizedMessage ?: "Unknown error"}"
+                    _connectionStatus.value = ConnectionStatus.Error(detailedError)
                 }
         }
     }

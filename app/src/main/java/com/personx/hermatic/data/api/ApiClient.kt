@@ -10,7 +10,10 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.concurrent.TimeUnit
 
 class ApiClient(private val securityManager: SecurityManager) {
-    val json = Json { ignoreUnknownKeys = true }
+    val json = Json { 
+        ignoreUnknownKeys = true
+        encodeDefaults = false // Important: Omit null fields to stay strict with OpenAI spec
+    }
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)

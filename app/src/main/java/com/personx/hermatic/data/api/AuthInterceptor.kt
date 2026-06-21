@@ -8,6 +8,9 @@ class AuthInterceptor(private val securityManager: SecurityManager) : Intercepto
     override fun intercept(chain: Interceptor.Chain): Response {
         val apiKey = securityManager.getApiKey()
         val request = chain.request().newBuilder()
+            .addHeader("Accept", "application/json")
+            .addHeader("User-Agent", "Hermatic-Android-Client")
+
         if (apiKey != null) {
             request.addHeader("Authorization", "Bearer $apiKey")
         }

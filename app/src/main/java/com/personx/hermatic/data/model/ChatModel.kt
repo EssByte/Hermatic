@@ -1,12 +1,13 @@
 package com.personx.hermatic.data.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 @Serializable
 data class Message(
     val role: String,
     val content: String,
-    val timestamp: Long = System.currentTimeMillis()
+    @Transient val timestamp: Long = System.currentTimeMillis()
 )
 
 @Serializable
