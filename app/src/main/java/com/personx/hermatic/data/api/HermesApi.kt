@@ -3,6 +3,8 @@ package com.personx.hermatic.data.api
 import com.personx.hermatic.data.model.ChatRequest
 import com.personx.hermatic.data.model.ChatResponse
 import com.personx.hermatic.data.model.ModelListResponse
+import com.personx.hermatic.data.model.SkillListResponse
+import com.personx.hermatic.data.model.ToolsetListResponse
 import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -20,6 +22,21 @@ interface HermesApi {
     @GET("v1/models")
     suspend fun getModels(): ModelListResponse
 
+    @GET("v1/skills")
+    suspend fun getSkills(): SkillListResponse
+
+    @GET("v1/toolsets")
+    suspend fun getToolsets(): ToolsetListResponse
+
+    @GET("v1/capabilities")
+    suspend fun getCapabilities(): okhttp3.ResponseBody
+
+    @GET("api/sessions")
+    suspend fun getSessions(): okhttp3.ResponseBody
+
+    @GET("api/jobs")
+    suspend fun getJobs(): okhttp3.ResponseBody
+
     @GET("health")
-    suspend fun checkHealth(): okhttp3.ResponseBody
+    suspend fun checkHealth(): ResponseBody
 }

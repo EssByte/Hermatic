@@ -2,6 +2,7 @@ package com.personx.hermatic.data.model
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonElement
 
 @Serializable
 data class Message(
@@ -35,6 +36,31 @@ data class ModelListResponse(
 data class ModelInfo(
     val id: String,
     val owned_by: String? = null
+)
+
+@Serializable
+data class SkillListResponse(
+    val data: List<SkillInfo>
+)
+
+@Serializable
+data class SkillInfo(
+    val id: String,
+    val name: String,
+    val description: String? = null,
+    val parameters: JsonElement? = null
+)
+
+@Serializable
+data class ToolsetListResponse(
+    val data: List<ToolsetInfo>
+)
+
+@Serializable
+data class ToolsetInfo(
+    val id: String,
+    val name: String,
+    val tools: List<String> = emptyList()
 )
 
 @Serializable

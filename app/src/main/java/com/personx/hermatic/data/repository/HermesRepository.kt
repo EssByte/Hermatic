@@ -3,12 +3,7 @@ package com.personx.hermatic.data.repository
 import com.personx.hermatic.data.api.ApiClient
 import com.personx.hermatic.data.api.HermesApi
 import com.personx.hermatic.data.db.ChatDao
-import com.personx.hermatic.data.model.ChatRequest
-import com.personx.hermatic.data.model.Message
-import com.personx.hermatic.data.model.toEntity
-import com.personx.hermatic.data.model.toMessage
-import com.personx.hermatic.data.model.ChatChunk
-import com.personx.hermatic.data.model.ModelInfo
+import com.personx.hermatic.data.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -37,6 +32,46 @@ class HermesRepository(
         }
     }
 
+    suspend fun getSkills(): List<SkillInfo> {
+        return try {
+            api.getSkills().data
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun getToolsets(): List<ToolsetInfo> {
+        return try {
+            api.getToolsets().data
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun getCapabilities(): String {
+        return try {
+            api.getCapabilities().string()
+        } catch (e: Exception) {
+            "Unavailable"
+        }
+    }
+
+    suspend fun getSessions(): String {
+        return try {
+            api.getSessions().string()
+        } catch (e: Exception) {
+            "Unavailable"
+        }
+    }
+
+    suspend fun getJobs(): String {
+        return try {
+            api.getJobs().string()
+        } catch (e: Exception) {
+            "Unavailable"
+        }
+    }
+
     fun chatStream(
         messages: List<Message>,
         model: String,
@@ -44,11 +79,9 @@ class HermesRepository(
         maxTokens: Int,
         systemPrompt: String
     ): Flow<String> = flow {
-        // Prepare messages with system prompt
         val fullMessages = mutableListOf(Message(role = "system", content = systemPrompt))
-        fullMessages.addAll(messages)
+        fullMessages.addAll(messages.map { it.copy(timestamp = 0) }) // Ensure clean payload
 
-        // Save user message to DB (last one in the input list)
         val userMessage = messages.last()
         chatDao.insertMessage(userMessage.toEntity())
 
@@ -66,8 +99,8 @@ class HermesRepository(
         responseBody.byteStream().bufferedReader().useLines { lines ->
             lines.forEach { line ->
                 if (line.startsWith("data: ")) {
-                    val data = line.substring(6)
-                    if (data != "[DONE]") {
+                    val data = line.substring(6).trim()
+                    if (data.isNotEmpty() && data != "[DONE]") {
                         try {
                             val chunk = json.decodeFromString<ChatChunk>(data)
                             chunk.choices.firstOrNull()?.delta?.content?.let { content ->
@@ -82,7 +115,6 @@ class HermesRepository(
             }
         }
 
-        // Save full bot message to DB
         if (fullContent.isNotEmpty()) {
             chatDao.insertMessage(Message(role = "assistant", content = fullContent.toString()).toEntity())
         }

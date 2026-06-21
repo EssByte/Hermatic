@@ -94,4 +94,29 @@ class SecurityManager(context: Context) {
     fun saveSelectedModel(model: String) {
         sharedPreferences.edit().putString("selected_model", model).apply()
     }
+
+    fun getPrimaryColor(): String {
+        // Default to Monochrome (White/Greenish-White)
+        return sharedPreferences.getString("theme_primary_color", "#FFFFFF") ?: "#FFFFFF"
+    }
+
+    fun savePrimaryColor(hex: String) {
+        sharedPreferences.edit().putString("theme_primary_color", hex).apply()
+    }
+
+    fun getAccentColor(): String {
+        return sharedPreferences.getString("theme_accent_color", "#00FF00") ?: "#00FF00"
+    }
+
+    fun saveAccentColor(hex: String) {
+        sharedPreferences.edit().putString("theme_accent_color", hex).apply()
+    }
+
+    fun isDarkMode(): Boolean {
+        return sharedPreferences.getBoolean("theme_dark_mode", true)
+    }
+
+    fun setDarkMode(enabled: Boolean) {
+        sharedPreferences.edit().putBoolean("theme_dark_mode", enabled).apply()
+    }
 }

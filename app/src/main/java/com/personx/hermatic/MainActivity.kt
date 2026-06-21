@@ -5,46 +5,62 @@ import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personx.hermatic.data.api.ApiClient
 import com.personx.hermatic.data.db.HermesDatabase
 import com.personx.hermatic.data.model.Message
+import com.personx.hermatic.data.model.SkillInfo
+import com.personx.hermatic.data.model.ToolsetInfo
 import com.personx.hermatic.data.repository.HermesRepository
 import com.personx.hermatic.security.BiometricHelper
 import com.personx.hermatic.security.SecurityManager
 import com.personx.hermatic.ui.theme.*
+import com.mikepenz.markdown.m3.Markdown
 import java.text.SimpleDateFormat
 import java.util.*
 
-sealed class Screen {
-    data object Chat : Screen()
-    data object Settings : Screen()
+sealed class Screen(val route: String, val icon: ImageVector) {
+    data object Chat : Screen("chat", Icons.AutoMirrored.Filled.Chat)
+    data object Skills : Screen("skills", Icons.Default.Build)
+    data object Settings : Screen("settings", Icons.Default.Settings)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,74 +85,74 @@ class MainActivity : FragmentActivity() {
 
         enableEdgeToEdge()
         setContent {
-            HermaticTheme {
+            val viewModel: HermesViewModel = viewModel(
+                factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                    @Suppress("UNCHECKED_CAST")
+                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                        return HermesViewModel(repository, securityManager) as T
+                    }
+                }
+            )
+
+            val primaryColorHex by viewModel.primaryColor.collectAsState()
+            val accentColorHex by viewModel.accentColor.collectAsState()
+            val isDarkTheme by viewModel.isDarkMode.collectAsState()
+            
+            val primaryColor = primaryColorHex.toColor()
+            val accentColor = accentColorHex.toColor()
+
+            HermaticTheme(
+                isDark = isDarkTheme,
+                primaryColor = primaryColor,
+                accentColor = accentColor
+            ) {
                 val authed by isAuthenticated
                 val error by authErrorMessage
                 var currentScreen by remember { mutableStateOf<Screen>(Screen.Chat) }
                 
                 Box(Modifier.fillMaxSize()) {
-                    NoisyAmbientBackground()
+                    if (isDarkTheme) {
+                        NoisyAmbientBackground(primaryColor, accentColor)
+                    } else {
+                        Box(Modifier.fillMaxSize().background(Color.White))
+                    }
                     
                     if (authed) {
-                        val viewModel: HermesViewModel = viewModel(
-                            factory = object : androidx.lifecycle.ViewModelProvider.Factory {
-                                @Suppress("UNCHECKED_CAST")
-                                override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                                    return HermesViewModel(repository, securityManager) as T
-                                }
-                            }
-                        )
-
-                        when (currentScreen) {
-                            is Screen.Chat -> {
-                                Scaffold(
-                                    modifier = Modifier.fillMaxSize(),
-                                    containerColor = Color.Transparent,
-                                    topBar = {
-                                        CenterAlignedTopAppBar(
-                                            title = { 
-                                                Text(
-                                                    "HERMATIC", 
-                                                    style = MaterialTheme.typography.titleLarge,
-                                                    fontWeight = FontWeight.Black
-                                                ) 
-                                            },
-                                            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
-                                            actions = {
-                                                IconButton(onClick = { currentScreen = Screen.Settings }) {
-                                                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.primary)
-                                                }
-                                                IconButton(onClick = { viewModel.clearHistory() }) {
-                                                    Icon(Icons.Default.Delete, contentDescription = "Clear Chat", tint = Color.Red)
-                                                }
-                                            }
+                        Scaffold(
+                            modifier = Modifier.fillMaxSize(),
+                            containerColor = Color.Transparent,
+                            bottomBar = {
+                                NavigationBar(
+                                    containerColor = if (isDarkTheme) Color.Black.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.8f),
+                                    modifier = Modifier.border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)), RectangleShape)
+                                ) {
+                                    val items = listOf(Screen.Chat, Screen.Skills, Screen.Settings)
+                                    items.forEach { screen ->
+                                        NavigationBarItem(
+                                            selected = currentScreen == screen,
+                                            onClick = { currentScreen = screen },
+                                            icon = { Icon(screen.icon, contentDescription = screen.route) },
+                                            label = { Text(screen.route.uppercase(), style = MaterialTheme.typography.labelSmall) },
+                                            colors = NavigationBarItemDefaults.colors(
+                                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                                unselectedIconColor = MaterialTheme.colorScheme.outline,
+                                                indicatorColor = Color.Transparent
+                                            )
                                         )
                                     }
-                                ) { chatPadding ->
-                                    HermesApp(viewModel, Modifier.padding(chatPadding))
                                 }
                             }
-                            is Screen.Settings -> {
-                                SettingsScreen(
-                                    viewModel = viewModel,
-                                    onBack = { currentScreen = Screen.Chat }
-                                )
+                        ) { padding ->
+                            Box(Modifier.padding(padding)) {
+                                when (currentScreen) {
+                                    is Screen.Chat -> ChatScreen(viewModel)
+                                    is Screen.Skills -> SkillsScreen(viewModel)
+                                    is Screen.Settings -> SettingsScreen(viewModel, onBack = { currentScreen = Screen.Chat })
+                                }
                             }
                         }
                     } else {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                if (error != null) {
-                                    Text("Authentication Error: $error", color = Color.Red)
-                                    Spacer(Modifier.height(16.dp))
-                                    Button(onClick = { performAuthentication() }, shape = RectangleShape) {
-                                        Text("RETRY AUTHENTICATION")
-                                    }
-                                } else {
-                                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                                }
-                            }
-                        }
+                        AuthScreen(error) { performAuthentication() }
                     }
                 }
             }
@@ -159,7 +175,213 @@ class MainActivity : FragmentActivity() {
 }
 
 @Composable
-fun NoisyAmbientBackground() {
+fun AuthScreen(error: String?, onRetry: () -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (error != null) {
+                Text("ACCESS DENIED", color = Color.Red, fontWeight = FontWeight.Black)
+                Text(error, color = Color.Red, style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.height(16.dp))
+                Button(onClick = onRetry, shape = RectangleShape) {
+                    Text("RETRY AUTHENTICATION")
+                }
+            } else {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(16.dp))
+                Text("DECRYPTING...", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
+
+@Composable
+fun ChatScreen(viewModel: HermesViewModel) {
+    val uiState by viewModel.uiState.collectAsState()
+    val isTyping by viewModel.isHermesTyping.collectAsState()
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)
+    ) {
+        when (val state = uiState) {
+            is HermesUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            is HermesUiState.NoApiKey -> SetupScreen(onSave = viewModel::saveConfig)
+            else -> {
+                val history = when (state) {
+                    is HermesUiState.Chatting -> state.history
+                    is HermesUiState.Error -> state.history
+                    else -> emptyList()
+                }
+                
+                Box(Modifier.weight(1f)) {
+                    ChatHistory(messages = history)
+                    if (isTyping) {
+                        Box(Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp)) {
+                            TypingIndicator()
+                        }
+                    }
+                }
+                
+                if (state is HermesUiState.Error) {
+                    Text(
+                        text = "ERROR: ${state.message}", 
+                        color = Color.Red,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                }
+                ChatInput(onSend = viewModel::sendMessage)
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun TypingIndicator() {
+    Row(
+        modifier = Modifier.padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        repeat(3) { index ->
+            val infiniteTransition = rememberInfiniteTransition(label = "typing")
+            val alpha by infiniteTransition.animateFloat(
+                initialValue = 0.2f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(600, delayMillis = index * 200),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "alpha"
+            )
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .alpha(alpha)
+                    .background(MaterialTheme.colorScheme.primary, RectangleShape)
+            )
+        }
+    }
+}
+
+@Composable
+fun SkillsScreen(viewModel: HermesViewModel) {
+    val skills by viewModel.skills.collectAsState()
+    val toolsets by viewModel.toolsets.collectAsState()
+    val rawDiagnostics by viewModel.rawDiagnostics.collectAsState()
+
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Text("AGENT CAPABILITIES", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+        Text("SYSTEM SKILLS, TOOLSETS AND ENDPOINTS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary)
+        
+        Spacer(Modifier.height(24.dp))
+        
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            item {
+                Text("ACTIVE TOOLSETS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            }
+            if (toolsets.isEmpty()) {
+                item { Text("No toolsets detected.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline) }
+            }
+            items(toolsets) { toolset ->
+                ToolsetCard(toolset)
+            }
+            
+            item {
+                Spacer(Modifier.height(16.dp))
+                Text("DETECTED SKILLS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            }
+            if (skills.isEmpty()) {
+                item { Text("No individual skills detected.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline) }
+            }
+            items(skills) { skill ->
+                SkillCard(skill)
+            }
+
+            item {
+                Spacer(Modifier.height(16.dp))
+                Text("SYSTEM DIAGNOSTICS (RAW)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            }
+            items(rawDiagnostics.toList()) { (key, value) ->
+                DiagnosticCard(key, value)
+            }
+        }
+    }
+}
+
+@Composable
+fun DiagnosticCard(title: String, rawJson: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)), RectangleShape)
+            .background(Color.White.copy(alpha = 0.05f))
+            .padding(12.dp)
+    ) {
+        Column {
+            Text(title.uppercase(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                rawJson,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.tertiary,
+                maxLines = 10,
+                overflow = TextOverflow.Ellipsis,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+            )
+        }
+    }
+}
+
+@Composable
+fun ToolsetCard(toolset: ToolsetInfo) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)), RectangleShape)
+            .background(Color.White.copy(alpha = 0.05f))
+            .padding(12.dp)
+    ) {
+        Column {
+            Text(toolset.name.uppercase(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Tools: ${toolset.tools.joinToString(", ")}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.tertiary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+fun SkillCard(skill: SkillInfo) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)), RectangleShape)
+            .background(Color.White.copy(alpha = 0.05f))
+            .padding(12.dp)
+    ) {
+        Column {
+            Text(skill.name.uppercase(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            if (!skill.description.isNullOrBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    skill.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text("ID: ${skill.id}", style = MaterialTheme.typography.labelSmall, color = Color.DarkGray, modifier = Modifier.align(Alignment.End))
+        }
+    }
+}
+
+@Composable
+fun NoisyAmbientBackground(primaryColor: Color, accentColor: Color) {
     val noiseDots = remember {
         List(1500) {
             val x = (0f..1f).random()
@@ -176,9 +398,10 @@ fun NoisyAmbientBackground() {
             .background(NousBlack)
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
+            // Blob 1: Primary Color (Top Right)
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(BlobGreen, Color.Transparent),
+                    colors = listOf(primaryColor.copy(alpha = 0.15f), Color.Transparent),
                     center = androidx.compose.ui.geometry.Offset(size.width * 0.8f, size.height * 0.1f),
                     radius = size.width * 0.8f
                 ),
@@ -186,9 +409,10 @@ fun NoisyAmbientBackground() {
                 radius = size.width * 0.8f
             )
 
+            // Blob 2: Accent Color (Center Left)
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(BlobBlue, Color.Transparent),
+                    colors = listOf(accentColor.copy(alpha = 0.12f), Color.Transparent),
                     center = androidx.compose.ui.geometry.Offset(size.width * 0.0f, size.height * 0.5f),
                     radius = size.width * 0.9f
                 ),
@@ -196,9 +420,10 @@ fun NoisyAmbientBackground() {
                 radius = size.width * 0.9f
             )
 
+            // Blob 3: Primary mixed (Bottom Right)
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(BlobPurple, Color.Transparent),
+                    colors = listOf(primaryColor.copy(alpha = 0.1f), Color.Transparent),
                     center = androidx.compose.ui.geometry.Offset(size.width * 0.5f, size.height * 0.9f),
                     radius = size.width * 0.7f
                 ),
@@ -222,43 +447,6 @@ fun NoisyAmbientBackground() {
 
 private fun ClosedRange<Float>.random() =
     (kotlin.random.Random.nextFloat() * (endInclusive - start)) + start
-
-@Composable
-fun HermesApp(viewModel: HermesViewModel, modifier: Modifier = Modifier) {
-    val uiState by viewModel.uiState.collectAsState()
-
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-    ) {
-        when (val state = uiState) {
-            is HermesUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            is HermesUiState.NoApiKey -> SetupScreen(onSave = viewModel::saveConfig)
-            else -> {
-                val history = when (state) {
-                    is HermesUiState.Chatting -> state.history
-                    is HermesUiState.Error -> state.history
-                    else -> emptyList()
-                }
-                ChatHistory(
-                    messages = history,
-                    modifier = Modifier.weight(1f)
-                )
-                if (state is HermesUiState.Error) {
-                    Text(
-                        text = "ERROR: ${state.message}", 
-                        color = Color.Red,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                }
-                ChatInput(onSend = viewModel::sendMessage)
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-        }
-    }
-}
 
 @Composable
 fun SetupScreen(onSave: (String, String) -> Unit) {
@@ -338,6 +526,7 @@ fun SetupScreen(onSave: (String, String) -> Unit) {
 fun ChatHistory(messages: List<Message>, modifier: Modifier = Modifier) {
     val listState = rememberLazyListState()
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+    val clipboardManager = LocalClipboardManager.current
     
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
@@ -355,6 +544,8 @@ fun ChatHistory(messages: List<Message>, modifier: Modifier = Modifier) {
             val isUser = message.role == "user"
             val alignment = if (isUser) Alignment.End else Alignment.Start
             
+            var showMenu by remember { mutableStateOf(false) }
+
             Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -380,13 +571,27 @@ fun ChatHistory(messages: List<Message>, modifier: Modifier = Modifier) {
                             RectangleShape
                         )
                         .background(if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
+                        .combinedClickable(
+                            onClick = {},
+                            onLongClick = { showMenu = true }
+                        )
                         .padding(12.dp)
                 ) {
-                    Text(
-                        text = message.content,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
+                    Markdown(content = message.content)
+                    
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Copy", style = MaterialTheme.typography.bodySmall) },
+                            leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(message.content))
+                                showMenu = false
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -404,6 +609,9 @@ fun SettingsScreen(viewModel: HermesViewModel, onBack: () -> Unit) {
     val selectedModel by viewModel.selectedModel.collectAsState()
     val availableModels by viewModel.availableModels.collectAsState()
     val connectionStatus by viewModel.connectionStatus.collectAsState()
+    val isDarkMode by viewModel.isDarkMode.collectAsState()
+    val primaryColorHex by viewModel.primaryColor.collectAsState()
+    val accentColorHex by viewModel.accentColor.collectAsState()
 
     var editUrl by remember { mutableStateOf(viewModel.getBaseUrl()) }
     var editKey by remember { mutableStateOf(viewModel.getApiKey()) }
@@ -520,6 +728,19 @@ fun SettingsScreen(viewModel: HermesViewModel, onBack: () -> Unit) {
                 }
 
                 Spacer(Modifier.height(24.dp))
+                Text("THEME", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Dark Mode", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    Switch(checked = isDarkMode, onCheckedChange = { viewModel.setDarkMode(it) })
+                }
+                
+                Text("Theme Color (Primary)", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 8.dp))
+                ColorPicker(selectedColor = primaryColorHex) { viewModel.setPrimaryColor(it) }
+                
+                Text("Accent Color", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 8.dp))
+                ColorPicker(selectedColor = accentColorHex) { viewModel.setAccentColor(it) }
+
+                Spacer(Modifier.height(24.dp))
                 Text("SECURITY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -628,6 +849,30 @@ fun SettingsScreen(viewModel: HermesViewModel, onBack: () -> Unit) {
             item {
                 Spacer(Modifier.height(32.dp))
             }
+        }
+    }
+}
+
+@Composable
+fun ColorPicker(selectedColor: String, onColorSelected: (String) -> Unit) {
+    val colors = listOf("#FFFFFF", "#00FF00", "#0066FF", "#AA00FF", "#FF0066", "#FFFF00")
+    Row(
+        modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        colors.forEach { hex ->
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(hex.toColor())
+                    .border(
+                        width = if (selectedColor == hex) 2.dp else 1.dp,
+                        color = if (selectedColor == hex) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                        shape = CircleShape
+                    )
+                    .clickable { onColorSelected(hex) }
+            )
         }
     }
 }

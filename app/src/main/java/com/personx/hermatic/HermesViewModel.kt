@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.personx.hermatic.data.model.Message
 import com.personx.hermatic.data.model.ModelInfo
+import com.personx.hermatic.data.model.SkillInfo
+import com.personx.hermatic.data.model.ToolsetInfo
 import com.personx.hermatic.data.repository.HermesRepository
 import com.personx.hermatic.security.SecurityManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,11 +39,32 @@ class HermesViewModel(
     private val _selectedModel = MutableStateFlow(securityManager.getSelectedModel())
     val selectedModel: StateFlow<String> = _selectedModel
 
+    private val _primaryColor = MutableStateFlow(securityManager.getPrimaryColor())
+    val primaryColor: StateFlow<String> = _primaryColor
+
+    private val _accentColor = MutableStateFlow(securityManager.getAccentColor())
+    val accentColor: StateFlow<String> = _accentColor
+
+    private val _isDarkMode = MutableStateFlow(securityManager.isDarkMode())
+    val isDarkMode: StateFlow<Boolean> = _isDarkMode
+
     private val _availableModels = MutableStateFlow<List<ModelInfo>>(emptyList())
     val availableModels: StateFlow<List<ModelInfo>> = _availableModels
 
+    private val _skills = MutableStateFlow<List<SkillInfo>>(emptyList())
+    val skills: StateFlow<List<SkillInfo>> = _skills
+
+    private val _toolsets = MutableStateFlow<List<ToolsetInfo>>(emptyList())
+    val toolsets: StateFlow<List<ToolsetInfo>> = _toolsets
+
+    private val _rawDiagnostics = MutableStateFlow<Map<String, String>>(emptyMap())
+    val rawDiagnostics: StateFlow<Map<String, String>> = _rawDiagnostics
+
     private val _connectionStatus = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Idle)
     val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus
+
+    private val _isHermesTyping = MutableStateFlow(false)
+    val isHermesTyping: StateFlow<Boolean> = _isHermesTyping
 
     private var currentHistory = emptyList<Message>()
     private val streamingBotResponse = MutableStateFlow<String?>(null)
@@ -50,13 +73,36 @@ class HermesViewModel(
         checkApiKey()
         observeHistory()
         triggerSelfDestruct()
-        fetchModels()
+        fetchInitialData()
     }
 
-    private fun fetchModels() {
+    private fun fetchInitialData() {
+        if (securityManager.getApiKey().isNullOrBlank()) return
+        
         viewModelScope.launch {
-            val models = repository.getModels()
-            _availableModels.value = models
+            fetchModels()
+            fetchSkills()
+            fetchDiagnostics()
+        }
+    }
+
+    private suspend fun fetchModels() {
+        val models = repository.getModels()
+        _availableModels.value = models
+    }
+
+    private suspend fun fetchSkills() {
+        _skills.value = repository.getSkills()
+        _toolsets.value = repository.getToolsets()
+    }
+
+    private fun fetchDiagnostics() {
+        viewModelScope.launch {
+            val diag = mutableMapOf<String, String>()
+            diag["Capabilities"] = repository.getCapabilities()
+            diag["Sessions"] = repository.getSessions()
+            diag["Jobs"] = repository.getJobs()
+            _rawDiagnostics.value = diag
         }
     }
 
@@ -107,7 +153,7 @@ class HermesViewModel(
         securityManager.saveBaseUrl(url)
         _uiState.value = HermesUiState.Idle
         checkApiKey()
-        fetchModels()
+        fetchInitialData()
     }
 
     fun testConnection() {
@@ -131,6 +177,7 @@ class HermesViewModel(
     fun sendMessage(text: String) {
         viewModelScope.launch {
             try {
+                _isHermesTyping.value = true
                 val userMsg = Message(role = "user", content = text)
                 var botResponse = ""
                 repository.chatStream(
@@ -140,11 +187,13 @@ class HermesViewModel(
                     maxTokens = _maxTokens.value,
                     systemPrompt = _systemPrompt.value
                 ).collect { chunk ->
+                    _isHermesTyping.value = false
                     botResponse += chunk
                     streamingBotResponse.value = botResponse
                 }
                 streamingBotResponse.value = null
             } catch (e: Exception) {
+                _isHermesTyping.value = false
                 streamingBotResponse.value = null
                 _uiState.value = HermesUiState.Error(e.message ?: "Unknown error", currentHistory)
             }
@@ -186,6 +235,21 @@ class HermesViewModel(
     fun setSelectedModel(model: String) {
         securityManager.saveSelectedModel(model)
         _selectedModel.value = model
+    }
+
+    fun setPrimaryColor(hex: String) {
+        securityManager.savePrimaryColor(hex)
+        _primaryColor.value = hex
+    }
+
+    fun setAccentColor(hex: String) {
+        securityManager.saveAccentColor(hex)
+        _accentColor.value = hex
+    }
+
+    fun setDarkMode(enabled: Boolean) {
+        securityManager.setDarkMode(enabled)
+        _isDarkMode.value = enabled
     }
 }
 

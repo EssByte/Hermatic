@@ -2,32 +2,45 @@ package com.personx.hermatic.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-
-private val NousDarkColorScheme = darkColorScheme(
-    primary = DarkPrimary,
-    onPrimary = DarkOnPrimary,
-    secondary = DarkSecondary,
-    onSecondary = NousBlack,
-    tertiary = DarkTertiary,
-    onTertiary = NousWhite,
-    background = DarkBackground,
-    onBackground = DarkOnBackground,
-    surface = DarkSurface,
-    onSurface = DarkOnSurface,
-    surfaceVariant = NousDarkGrey,
-    onSurfaceVariant = NousWhite,
-    outline = NousTextGrey
-)
+import androidx.compose.ui.graphics.Color
 
 @Composable
 fun HermaticTheme(
+    isDark: Boolean = true,
+    primaryColor: Color = NousWhite,
+    accentColor: Color = Color(0xFF00FF00),
     content: @Composable () -> Unit
 ) {
-    // Hermatic uses a fixed high-contrast dark theme by default
-    // to match the Nous Research portal aesthetic.
+    val colorScheme = if (isDark) {
+        darkColorScheme(
+            primary = primaryColor,
+            onPrimary = if (primaryColor == NousWhite) Color.Black else Color.White,
+            secondary = accentColor,
+            onSecondary = Color.Black,
+            background = NousBlack,
+            onBackground = NousWhite,
+            surface = NousDarkGrey,
+            onSurface = NousWhite,
+            tertiary = NousTextGrey
+        )
+    } else {
+        lightColorScheme(
+            primary = if (primaryColor == NousWhite) Color.Black else primaryColor,
+            onPrimary = Color.White,
+            secondary = accentColor,
+            onSecondary = Color.White,
+            background = NousWhite,
+            onBackground = NousBlack,
+            surface = Color.LightGray,
+            onSurface = NousBlack,
+            tertiary = Color.Gray
+        )
+    }
+
     MaterialTheme(
-        colorScheme = NousDarkColorScheme,
+        colorScheme = colorScheme,
         typography = Typography,
         content = content
     )
