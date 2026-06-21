@@ -113,8 +113,12 @@ class HermesViewModel(
     fun testConnection() {
         viewModelScope.launch {
             _connectionStatus.value = ConnectionStatus.Testing
-            val success = repository.checkHealth()
-            _connectionStatus.value = if (success) ConnectionStatus.Success else ConnectionStatus.Error
+            try {
+                val success = repository.checkHealth()
+                _connectionStatus.value = if (success) ConnectionStatus.Success else ConnectionStatus.Error("Health check failed")
+            } catch (e: Exception) {
+                _connectionStatus.value = ConnectionStatus.Error(e.message ?: "Unknown error")
+            }
         }
     }
 
@@ -194,5 +198,5 @@ sealed class ConnectionStatus {
     data object Idle : ConnectionStatus()
     data object Testing : ConnectionStatus()
     data object Success : ConnectionStatus()
-    data object Error : ConnectionStatus()
+    data class Error(val message: String) : ConnectionStatus()
 }

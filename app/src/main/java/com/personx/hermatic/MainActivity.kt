@@ -2,6 +2,7 @@ package com.personx.hermatic
 
 import android.os.Bundle
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.BorderStroke
@@ -12,25 +13,21 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
@@ -44,6 +41,11 @@ import com.personx.hermatic.security.SecurityManager
 import com.personx.hermatic.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
+
+sealed class Screen {
+    data object Chat : Screen()
+    data object Settings : Screen()
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : FragmentActivity() {
@@ -70,60 +72,55 @@ class MainActivity : FragmentActivity() {
             HermaticTheme {
                 val authed by isAuthenticated
                 val error by authErrorMessage
+                var currentScreen by remember { mutableStateOf<Screen>(Screen.Chat) }
                 
                 Box(Modifier.fillMaxSize()) {
                     NoisyAmbientBackground()
                     
                     if (authed) {
-                        Scaffold(
-                            modifier = Modifier.fillMaxSize(),
-                            containerColor = Color.Transparent
-                        ) { innerPadding ->
-                            val viewModel: HermesViewModel = viewModel(
-                                factory = object : androidx.lifecycle.ViewModelProvider.Factory {
-                                    @Suppress("UNCHECKED_CAST")
-                                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                                        return HermesViewModel(repository, securityManager) as T
+                        val viewModel: HermesViewModel = viewModel(
+                            factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                                @Suppress("UNCHECKED_CAST")
+                                override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                                    return HermesViewModel(repository, securityManager) as T
+                                }
+                            }
+                        )
+
+                        when (currentScreen) {
+                            is Screen.Chat -> {
+                                Scaffold(
+                                    modifier = Modifier.fillMaxSize(),
+                                    containerColor = Color.Transparent,
+                                    topBar = {
+                                        CenterAlignedTopAppBar(
+                                            title = { 
+                                                Text(
+                                                    "HERMATIC", 
+                                                    style = MaterialTheme.typography.titleLarge,
+                                                    fontWeight = FontWeight.Black
+                                                ) 
+                                            },
+                                            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                                            actions = {
+                                                IconButton(onClick = { currentScreen = Screen.Settings }) {
+                                                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.primary)
+                                                }
+                                                IconButton(onClick = { viewModel.clearHistory() }) {
+                                                    Icon(Icons.Default.Delete, contentDescription = "Clear Chat", tint = Color.Red)
+                                                }
+                                            }
+                                        )
                                     }
+                                ) { chatPadding ->
+                                    HermesApp(viewModel, Modifier.padding(chatPadding))
                                 }
-                            )
-                            
-                            Scaffold(
-                                modifier = Modifier.padding(innerPadding),
-                                containerColor = Color.Transparent,
-                                topBar = {
-                                    CenterAlignedTopAppBar(
-                                        title = { 
-                                            Text(
-                                                "HERMATIC", 
-                                                style = MaterialTheme.typography.titleLarge,
-                                                fontWeight = FontWeight.Black
-                                            ) 
-                                        },
-                                        colors = TopAppBarDefaults.topAppBarColors(
-                                            containerColor = Color.Transparent
-                                        ),
-                                        actions = {
-                                            var showSettings by remember { mutableStateOf(false) }
-                                            
-                                            IconButton(onClick = { showSettings = true }) {
-                                                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.primary)
-                                            }
-                                            IconButton(onClick = { viewModel.clearHistory() }) {
-                                                Icon(Icons.Default.Delete, contentDescription = "Clear Chat", tint = Color.Red)
-                                            }
-                                            
-                                            if (showSettings) {
-                                                SettingsDialog(
-                                                    viewModel = viewModel,
-                                                    onDismiss = { showSettings = false }
-                                                )
-                                            }
-                                        }
-                                    )
-                                }
-                            ) { chatPadding ->
-                                HermesApp(viewModel, Modifier.padding(chatPadding))
+                            }
+                            is Screen.Settings -> {
+                                SettingsScreen(
+                                    viewModel = viewModel,
+                                    onBack = { currentScreen = Screen.Chat }
+                                )
                             }
                         }
                     } else {
@@ -396,8 +393,9 @@ fun ChatHistory(messages: List<Message>, modifier: Modifier = Modifier) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsDialog(viewModel: HermesViewModel, onDismiss: () -> Unit) {
+fun SettingsScreen(viewModel: HermesViewModel, onBack: () -> Unit) {
     val currentPeriod by viewModel.selfDestructPeriod.collectAsState()
     val isBiometricEnabled by viewModel.isBiometricEnabled.collectAsState()
     val systemPrompt by viewModel.systemPrompt.collectAsState()
@@ -417,167 +415,205 @@ fun SettingsDialog(viewModel: HermesViewModel, onDismiss: () -> Unit) {
         "7 DAYS" to 604800_000L
     )
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        shape = RectangleShape,
-        containerColor = MaterialTheme.colorScheme.surface,
-        title = { 
-            Text("SYSTEM CONFIGURATION", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Black) 
-        },
-        text = {
-            LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                item {
-                    Text("CONNECTIVITY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
-                    TextField(
-                        value = editUrl,
-                        onValueChange = { editUrl = it },
-                        label = { Text("BASE_URL", style = MaterialTheme.typography.labelSmall) },
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        shape = RectangleShape,
-                        colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
-                    )
-                    TextField(
-                        value = editKey,
-                        onValueChange = { editKey = it },
-                        label = { Text("API_KEY", style = MaterialTheme.typography.labelSmall) },
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        shape = RectangleShape,
-                        colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
-                    )
-                    
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
-                        Button(
-                            onClick = { viewModel.saveConfig(editKey, editUrl) },
-                            shape = RectangleShape,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("UPDATE CONFIG", style = MaterialTheme.typography.labelSmall)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        IconButton(onClick = { viewModel.testConnection() }) {
-                            when (connectionStatus) {
-                                is ConnectionStatus.Testing -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                                is ConnectionStatus.Success -> Icon(Icons.Default.CheckCircle, contentDescription = "Success", tint = Color.Green)
-                                is ConnectionStatus.Error -> Icon(Icons.Default.Error, contentDescription = "Error", tint = Color.Red)
-                                else -> Icon(Icons.Default.Refresh, contentDescription = "Test Connection")
-                            }
-                        }
-                    }
+    BackHandler(onBack = onBack)
 
-                    Spacer(Modifier.height(16.dp))
-                    Text("SECURITY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().height(48.dp)
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = Color.Transparent,
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("SYSTEM CONFIGURATION", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Black) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp)
+        ) {
+            item {
+                Spacer(Modifier.height(16.dp))
+                Text("CONNECTIVITY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                TextField(
+                    value = editUrl,
+                    onValueChange = { editUrl = it },
+                    label = { Text("BASE_URL", style = MaterialTheme.typography.labelSmall) },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    shape = RectangleShape,
+                    colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
+                )
+                TextField(
+                    value = editKey,
+                    onValueChange = { editKey = it },
+                    label = { Text("API_KEY", style = MaterialTheme.typography.labelSmall) },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    shape = RectangleShape,
+                    colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent)
+                )
+                
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
+                    Button(
+                        onClick = { viewModel.testConnection() },
+                        shape = RectangleShape,
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Checkbox(
-                            checked = isBiometricEnabled,
-                            onCheckedChange = { viewModel.setBiometricEnabled(it) }
-                        )
-                        Text("Enable Biometric Lock", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 8.dp))
+                        Text("TEST CONNECTION", style = MaterialTheme.typography.labelSmall)
                     }
-                    
-                    Spacer(Modifier.height(16.dp))
-                    Text("PERSONA", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
-                    TextField(
-                        value = systemPrompt,
-                        onValueChange = { viewModel.setSystemPrompt(it) },
-                        placeholder = { Text("System instructions...", style = MaterialTheme.typography.bodySmall) },
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = { viewModel.saveConfig(editKey, editUrl) },
                         shape = RectangleShape,
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent
-                        )
-                    )
-
-                    Spacer(Modifier.height(16.dp))
-                    Text("MODEL CONTROL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
-                    
-                    var expanded by remember { mutableStateOf(false) }
-                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                        OutlinedButton(
-                            onClick = { expanded = true },
-                            shape = RectangleShape,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(selectedModel.ifEmpty { "Select Model" }, style = MaterialTheme.typography.bodySmall)
-                        }
-                        DropdownMenu(
-                            expanded = expanded,
-                            onDismissRequest = { expanded = false },
-                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                        ) {
-                            availableModels.forEach { model ->
-                                DropdownMenuItem(
-                                    text = { Text(model.id, style = MaterialTheme.typography.bodySmall) },
-                                    onClick = {
-                                        viewModel.setSelectedModel(model.id)
-                                        expanded = false
-                                    }
-                                )
-                            }
-                            if (availableModels.isEmpty()) {
-                                DropdownMenuItem(
-                                    text = { Text("hermes-agent", style = MaterialTheme.typography.bodySmall) },
-                                    onClick = {
-                                        viewModel.setSelectedModel("hermes-agent")
-                                        expanded = false
-                                    }
-                                )
-                            }
-                        }
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                    ) {
+                        Text("APPLY CHANGES", style = MaterialTheme.typography.labelSmall, color = Color.Black)
                     }
-
-                    Spacer(Modifier.height(8.dp))
-                    Text("TEMPERATURE: ${String.format(Locale.US, "%.1f", temperature)}", style = MaterialTheme.typography.labelSmall)
-                    Slider(
-                        value = temperature,
-                        onValueChange = { viewModel.setTemperature(it) },
-                        valueRange = 0f..1f,
-                        steps = 10
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-                    Text("MAX TOKENS: $maxTokens", style = MaterialTheme.typography.labelSmall)
-                    Slider(
-                        value = maxTokens.toFloat(),
-                        onValueChange = { viewModel.setMaxTokens(it.toInt()) },
-                        valueRange = 256f..4096f,
-                        steps = 15
-                    )
-
-                    Spacer(Modifier.height(16.dp))
-                    Text("RETENTION POLICY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
-                items(options) { (label, period) ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                    ) {
-                        RadioButton(
-                            selected = currentPeriod == period,
-                            onClick = { viewModel.setSelfDestructPeriod(period) }
-                        )
-                        Text(
-                            text = label, 
-                            modifier = Modifier.padding(start = 8.dp),
-                            style = MaterialTheme.typography.bodySmall
-                        )
+
+                when (connectionStatus) {
+                    is ConnectionStatus.Testing -> {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Pinging node...", style = MaterialTheme.typography.bodySmall)
+                        }
                     }
+                    is ConnectionStatus.Success -> {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.Green, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Node reachable", color = Color.Green, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    is ConnectionStatus.Error -> {
+                        val msg = (connectionStatus as ConnectionStatus.Error).message
+                        Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(bottom = 8.dp)) {
+                            Icon(Icons.Default.Error, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp).padding(top = 2.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Failure: $msg", color = Color.Red, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    else -> {}
+                }
+
+                Spacer(Modifier.height(24.dp))
+                Text("SECURITY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                ) {
+                    Checkbox(
+                        checked = isBiometricEnabled,
+                        onCheckedChange = { viewModel.setBiometricEnabled(it) }
+                    )
+                    Text("Enable Biometric Lock", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 8.dp))
+                }
+                
+                Spacer(Modifier.height(24.dp))
+                Text("PERSONA", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                TextField(
+                    value = systemPrompt,
+                    onValueChange = { viewModel.setSystemPrompt(it) },
+                    placeholder = { Text("System instructions...", style = MaterialTheme.typography.bodySmall) },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    shape = RectangleShape,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent
+                    )
+                )
+
+                Spacer(Modifier.height(24.dp))
+                Text("MODEL CONTROL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                
+                var expanded by remember { mutableStateOf(false) }
+                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                    OutlinedButton(
+                        onClick = { expanded = true },
+                        shape = RectangleShape,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(selectedModel.ifEmpty { "Select Model" }, style = MaterialTheme.typography.bodySmall)
+                    }
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false },
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                    ) {
+                        availableModels.forEach { model ->
+                            DropdownMenuItem(
+                                text = { Text(model.id, style = MaterialTheme.typography.bodySmall) },
+                                onClick = {
+                                    viewModel.setSelectedModel(model.id)
+                                    expanded = false
+                                }
+                            )
+                        }
+                        if (availableModels.isEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text("hermes-agent", style = MaterialTheme.typography.bodySmall) },
+                                onClick = {
+                                    viewModel.setSelectedModel("hermes-agent")
+                                    expanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Text("TEMPERATURE: ${String.format(Locale.US, "%.1f", temperature)}", style = MaterialTheme.typography.labelSmall)
+                Slider(
+                    value = temperature,
+                    onValueChange = { viewModel.setTemperature(it) },
+                    valueRange = 0f..1f,
+                    steps = 10
+                )
+
+                Spacer(Modifier.height(8.dp))
+                Text("MAX TOKENS: $maxTokens", style = MaterialTheme.typography.labelSmall)
+                Slider(
+                    value = maxTokens.toFloat(),
+                    onValueChange = { viewModel.setMaxTokens(it.toInt()) },
+                    valueRange = 256f..4096f,
+                    steps = 15
+                )
+
+                Spacer(Modifier.height(24.dp))
+                Text("RETENTION POLICY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            items(options) { (label, period) ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    RadioButton(
+                        selected = currentPeriod == period,
+                        onClick = { viewModel.setSelfDestructPeriod(period) }
+                    )
+                    Text(
+                        text = label, 
+                        modifier = Modifier.padding(start = 8.dp),
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { 
-                Text("CLOSE", color = MaterialTheme.colorScheme.primary) 
+            item {
+                Spacer(Modifier.height(32.dp))
             }
         }
-    )
+    }
 }
 
 @Composable
