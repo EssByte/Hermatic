@@ -9,7 +9,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 
 class ApiClient(private val securityManager: SecurityManager) {
-    private val json = Json { ignoreUnknownKeys = true }
+    val json = Json { ignoreUnknownKeys = true }
 
     private val okHttpClient = OkHttpClient.Builder()
         .addInterceptor(AuthInterceptor(securityManager))

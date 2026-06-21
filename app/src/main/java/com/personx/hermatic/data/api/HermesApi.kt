@@ -2,10 +2,16 @@ package com.personx.hermatic.data.api
 
 import com.personx.hermatic.data.model.ChatRequest
 import com.personx.hermatic.data.model.ChatResponse
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.POST
+import retrofit2.http.Streaming
 
 interface HermesApi {
     @POST("v1/chat/completions")
     suspend fun chatCompletions(@Body request: ChatRequest): ChatResponse
+
+    @Streaming
+    @POST("v1/chat/completions")
+    suspend fun chatCompletionsStream(@Body request: ChatRequest): ResponseBody
 }

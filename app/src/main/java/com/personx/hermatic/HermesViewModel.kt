@@ -12,13 +12,14 @@ import kotlinx.coroutines.launch
 
 class HermesViewModel(
     private val repository: HermesRepository,
-    private val securityManager: SecurityManager
+    private val securityManager: SecurityManager,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<HermesUiState>(HermesUiState.Loading)
     val uiState: StateFlow<HermesUiState> = _uiState
 
     private var currentHistory = emptyList<Message>()
+    private val streamingBotResponse = MutableStateFlow<String?>(null)
 
     init {
         checkApiKey()
@@ -37,11 +38,25 @@ class HermesViewModel(
         viewModelScope.launch {
             repository.getChatHistory().collectLatest { history ->
                 currentHistory = history
-                if (_uiState.value !is HermesUiState.NoApiKey) {
-                    _uiState.value = HermesUiState.Chatting(history)
-                }
+                updateUiState()
             }
         }
+        viewModelScope.launch {
+            streamingBotResponse.collectLatest { _ ->
+                updateUiState()
+            }
+        }
+    }
+
+    private fun updateUiState() {
+        if (_uiState.value is HermesUiState.NoApiKey) return
+        
+        val historyWithStream = if (streamingBotResponse.value != null) {
+            currentHistory + Message(role = "assistant", content = streamingBotResponse.value!!)
+        } else {
+            currentHistory
+        }
+        _uiState.value = HermesUiState.Chatting(historyWithStream)
     }
 
     fun saveApiKey(key: String) {
@@ -52,12 +67,19 @@ class HermesViewModel(
 
     fun sendMessage(text: String) {
         viewModelScope.launch {
-            // We don't manually add to currentHistory here because the observer will pick it up
-            // when it's saved to the database in the repository.
-            // But we can show a temporary state if needed.
             try {
-                repository.chat(currentHistory + Message(role = "user", content = text))
+                val userMsg = Message(role = "user", content = text)
+                // Note: repository.chatStream will save userMsg to DB, 
+                // which will trigger observeHistory and update currentHistory.
+                
+                var botResponse = ""
+                repository.chatStream(currentHistory + userMsg).collect { chunk ->
+                    botResponse += chunk
+                    streamingBotResponse.value = botResponse
+                }
+                streamingBotResponse.value = null
             } catch (e: Exception) {
+                streamingBotResponse.value = null
                 _uiState.value = HermesUiState.Error(e.message ?: "Unknown error", currentHistory)
             }
         }

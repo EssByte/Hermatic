@@ -23,6 +23,18 @@ data class ChatResponse(
 
 @Serializable
 data class Choice(
-    val message: Message,
+    val message: Message? = null,
+    val delta: Delta? = null,
     val finish_reason: String? = null
+)
+
+@Serializable
+data class Delta(
+    val content: String? = null
+)
+
+@Serializable
+data class ChatChunk(
+    val id: String,
+    val choices: List<Choice>
 )
