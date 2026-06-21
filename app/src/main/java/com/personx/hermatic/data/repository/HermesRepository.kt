@@ -1,5 +1,10 @@
 package com.personx.hermatic.data.repository
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.util.Base64
 import com.personx.hermatic.data.api.ApiClient
 import com.personx.hermatic.data.api.HermesApi
 import com.personx.hermatic.data.db.ChatDao
@@ -9,7 +14,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.*
+import java.io.ByteArrayOutputStream
 
 class HermesRepository(
     private val apiClient: ApiClient,
@@ -18,10 +24,14 @@ class HermesRepository(
 ) {
     private val api: HermesApi get() = apiClient.hermesApi
 
-    fun getChatHistory(): Flow<List<Message>> {
-        return chatDao.getAllMessages().map { entities ->
+    fun getChatHistory(sessionId: String): Flow<List<Message>> {
+        return chatDao.getMessagesForSession(sessionId).map { entities ->
             entities.map { it.toMessage() }
         }
+    }
+    
+    fun getSessions(): Flow<List<String>> {
+        return chatDao.getAllSessionIds()
     }
 
     suspend fun getModels(): List<ModelInfo> {
@@ -56,14 +66,6 @@ class HermesRepository(
         }
     }
 
-    suspend fun getSessions(): String {
-        return try {
-            api.getSessions().string()
-        } catch (e: Exception) {
-            "Unavailable"
-        }
-    }
-
     suspend fun getJobs(): String {
         return try {
             api.getJobs().string()
@@ -73,6 +75,7 @@ class HermesRepository(
     }
 
     fun chatStream(
+        sessionId: String,
         messages: List<Message>,
         model: String,
         temperature: Float,
@@ -80,10 +83,14 @@ class HermesRepository(
         systemPrompt: String
     ): Flow<String> = flow {
         val fullMessages = mutableListOf(Message(role = "system", content = systemPrompt))
-        fullMessages.addAll(messages.map { it.copy(timestamp = 0) }) // Ensure clean payload
+        
+        // Convert history to clean payload
+        messages.forEach { msg ->
+            fullMessages.add(msg.copy(timestamp = 0, imageUrl = null))
+        }
 
         val userMessage = messages.last()
-        chatDao.insertMessage(userMessage.toEntity())
+        chatDao.insertMessage(userMessage.toEntity(sessionId))
 
         val request = ChatRequest(
             model = model,
@@ -116,12 +123,12 @@ class HermesRepository(
         }
 
         if (fullContent.isNotEmpty()) {
-            chatDao.insertMessage(Message(role = "assistant", content = fullContent.toString()).toEntity())
+            chatDao.insertMessage(Message(role = "assistant", content = fullContent.toString()).toEntity(sessionId))
         }
     }.flowOn(Dispatchers.IO)
 
-    suspend fun clearHistory() {
-        chatDao.clearHistory()
+    suspend fun clearHistory(sessionId: String) {
+        chatDao.clearSessionHistory(sessionId)
     }
 
     suspend fun checkHealth(): Result<Unit> {
@@ -136,5 +143,18 @@ class HermesRepository(
     suspend fun performSelfDestruct(retentionPeriodMs: Long) {
         val threshold = System.currentTimeMillis() - retentionPeriodMs
         chatDao.deleteMessagesOlderThan(threshold)
+    }
+    
+    fun uriToBase64(context: Context, uri: Uri): String? {
+        return try {
+            val inputStream = context.contentResolver.openInputStream(uri)
+            val bitmap = BitmapFactory.decodeStream(inputStream)
+            val outputStream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+            val bytes = outputStream.toByteArray()
+            Base64.encodeToString(bytes, Base64.DEFAULT)
+        } catch (e: Exception) {
+            null
+        }
     }
 }

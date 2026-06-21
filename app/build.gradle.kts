@@ -64,6 +64,7 @@ dependencies {
     implementation(libs.sqlcipher)
     implementation(libs.androidx.sqlite)
     implementation(libs.markdown.compose)
+    implementation(libs.coil.compose)
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

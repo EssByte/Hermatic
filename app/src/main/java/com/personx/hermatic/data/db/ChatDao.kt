@@ -9,15 +9,18 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ChatDao {
-    @Query("SELECT * FROM messages ORDER BY timestamp ASC")
-    fun getAllMessages(): Flow<List<ChatMessageEntity>>
+    @Query("SELECT * FROM messages WHERE sessionId = :sessionId ORDER BY timestamp ASC")
+    fun getMessagesForSession(sessionId: String): Flow<List<ChatMessageEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: ChatMessageEntity)
 
-    @Query("DELETE FROM messages")
-    suspend fun clearHistory()
+    @Query("DELETE FROM messages WHERE sessionId = :sessionId")
+    suspend fun clearSessionHistory(sessionId: String)
 
     @Query("DELETE FROM messages WHERE timestamp < :threshold")
     suspend fun deleteMessagesOlderThan(threshold: Long)
+    
+    @Query("SELECT DISTINCT sessionId FROM messages")
+    fun getAllSessionIds(): Flow<List<String>>
 }

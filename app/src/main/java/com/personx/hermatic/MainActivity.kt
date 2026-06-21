@@ -1,10 +1,16 @@
 package com.personx.hermatic
 
+import android.content.Context
+import android.net.Uri
 import android.os.Bundle
+import android.util.Base64
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -14,6 +20,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -35,15 +42,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
 import com.personx.hermatic.data.api.ApiClient
 import com.personx.hermatic.data.db.HermesDatabase
 import com.personx.hermatic.data.model.Message
@@ -73,7 +84,6 @@ class MainActivity : FragmentActivity() {
 
     override fun onStop() {
         super.onStop()
-        // Auto-lock when the app goes to background
         if (securityManager.isBiometricEnabled()) {
             isAuthenticated.value = false
         }
@@ -85,6 +95,7 @@ class MainActivity : FragmentActivity() {
             performAuthentication()
         }
     }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
@@ -208,44 +219,96 @@ fun AuthScreen(error: String?, onRetry: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(viewModel: HermesViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val isTyping by viewModel.isHermesTyping.collectAsState()
+    val sessions by viewModel.sessions.collectAsState()
+    val currentSessionId by viewModel.currentSessionId.collectAsState()
 
-    Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)
-    ) {
-        when (val state = uiState) {
-            is HermesUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            is HermesUiState.NoApiKey -> SetupScreen(onSave = viewModel::saveConfig)
-            else -> {
-                val history = when (state) {
-                    is HermesUiState.Chatting -> state.history
-                    is HermesUiState.Error -> state.history
-                    else -> emptyList()
+    Column(modifier = Modifier.fillMaxSize()) {
+        CenterAlignedTopAppBar(
+            title = { 
+                Text("HERMATIC", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black) 
+            },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+            actions = {
+                IconButton(onClick = { viewModel.clearHistory() }) {
+                    Icon(Icons.Default.Delete, contentDescription = "Clear Chat", tint = Color.Red)
                 }
-                
-                Box(Modifier.weight(1f)) {
-                    ChatHistory(messages = history)
+            }
+        )
+
+        LazyRow(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item {
+                IconButton(
+                    onClick = { viewModel.startNewSession() },
+                    modifier = Modifier.size(36.dp).border(1.dp, MaterialTheme.colorScheme.primary, RectangleShape)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "New Session", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                }
+            }
+            items(sessions) { id ->
+                val isSelected = id == currentSessionId
+                Box(
+                    modifier = Modifier
+                        .height(36.dp)
+                        .border(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, RectangleShape)
+                        .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
+                        .clickable { viewModel.switchSession(id) }
+                        .padding(horizontal = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (id == "default") "MAIN" else id.takeLast(4).uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground
+                    )
+                }
+            }
+        }
+
+        BoxWithConstraints(modifier = Modifier.weight(1f).padding(horizontal = 16.dp)) {
+            val maxBubbleWidth = if (maxWidth > 600.dp) 500.dp else maxWidth * 0.85f
+            
+            when (val state = uiState) {
+                is HermesUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                is HermesUiState.NoApiKey -> SetupScreen(onSave = viewModel::saveConfig)
+                else -> {
+                    val history = when (state) {
+                        is HermesUiState.Chatting -> state.history
+                        is HermesUiState.Error -> state.history
+                        else -> emptyList()
+                    }
+                    
+                    ChatHistory(messages = history, maxBubbleWidth = maxBubbleWidth)
                     if (isTyping) {
                         Box(Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp)) {
                             TypingIndicator()
                         }
                     }
+                    
+                    if (state is HermesUiState.Error) {
+                        Text(
+                            text = "ERROR: ${state.message}", 
+                            color = Color.Red,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(vertical = 8.dp).align(Alignment.BottomCenter)
+                        )
+                    }
                 }
-                
-                if (state is HermesUiState.Error) {
-                    Text(
-                        text = "ERROR: ${state.message}", 
-                        color = Color.Red,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                }
-                ChatInput(onSend = viewModel::sendMessage)
-                Spacer(modifier = Modifier.height(16.dp))
             }
+        }
+        
+        if (uiState !is HermesUiState.NoApiKey) {
+            val context = LocalContext.current
+            ChatInput(onSend = { text, uri -> viewModel.sendMessage(context, text, uri) })
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
@@ -253,10 +316,11 @@ fun ChatScreen(viewModel: HermesViewModel) {
 @Composable
 fun TypingIndicator() {
     Row(
-        modifier = Modifier.padding(8.dp),
+        modifier = Modifier.padding(8.dp).background(Color.Black.copy(alpha = 0.3f)).padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
+        Text("HERMES_THINKING", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
         repeat(3) { index ->
             val infiniteTransition = rememberInfiniteTransition(label = "typing")
             val alpha by infiniteTransition.animateFloat(
@@ -270,7 +334,7 @@ fun TypingIndicator() {
             )
             Box(
                 modifier = Modifier
-                    .size(6.dp)
+                    .size(4.dp)
                     .alpha(alpha)
                     .background(MaterialTheme.colorScheme.primary, RectangleShape)
             )
@@ -292,10 +356,10 @@ fun SkillsScreen(viewModel: HermesViewModel) {
         
         LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
-                Text("ACTIVE TOOLSETS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                SectionHeader("ACTIVE TOOLSETS", Icons.Default.Build)
             }
             if (toolsets.isEmpty()) {
-                item { Text("No toolsets detected.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline) }
+                item { EmptyState("No toolsets detected.") }
             }
             items(toolsets) { toolset ->
                 ToolsetCard(toolset)
@@ -303,10 +367,10 @@ fun SkillsScreen(viewModel: HermesViewModel) {
             
             item {
                 Spacer(Modifier.height(16.dp))
-                Text("DETECTED SKILLS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                SectionHeader("DETECTED SKILLS", Icons.Default.Bolt)
             }
             if (skills.isEmpty()) {
-                item { Text("No individual skills detected.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline) }
+                item { EmptyState("No individual skills detected.") }
             }
             items(skills) { skill ->
                 SkillCard(skill)
@@ -314,7 +378,7 @@ fun SkillsScreen(viewModel: HermesViewModel) {
 
             item {
                 Spacer(Modifier.height(16.dp))
-                Text("SYSTEM DIAGNOSTICS (RAW)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                SectionHeader("SYSTEM DIAGNOSTICS (RAW)", Icons.Default.Dns)
             }
             items(rawDiagnostics.toList()) { (key, value) ->
                 DiagnosticCard(key, value)
@@ -324,25 +388,46 @@ fun SkillsScreen(viewModel: HermesViewModel) {
 }
 
 @Composable
+fun SectionHeader(title: String, icon: ImageVector) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(title, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+    }
+}
+
+@Composable
+fun EmptyState(text: String) {
+    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(vertical = 8.dp))
+}
+
+@Composable
 fun DiagnosticCard(title: String, rawJson: String) {
+    var expanded by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)), RectangleShape)
             .background(Color.White.copy(alpha = 0.05f))
+            .clickable { expanded = !expanded }
             .padding(12.dp)
     ) {
         Column {
-            Text(title.uppercase(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                rawJson,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.tertiary,
-                maxLines = 10,
-                overflow = TextOverflow.Ellipsis,
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title.uppercase(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+            }
+            if (expanded) {
+                Spacer(Modifier.height(8.dp))
+                Box(Modifier.background(Color.Black.copy(alpha = 0.5f)).padding(8.dp)) {
+                    Text(
+                        rawJson,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
+            }
         }
     }
 }
@@ -359,13 +444,13 @@ fun ToolsetCard(toolset: ToolsetInfo) {
         Column {
             Text(toolset.name.uppercase(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
-            Text(
-                "Tools: ${toolset.tools.joinToString(", ")}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.tertiary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+            FlowRow(mainAxisSpacing = 8.dp, crossAxisSpacing = 8.dp) {
+                toolset.tools.forEach { tool ->
+                    Box(Modifier.background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                        Text(tool, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                    }
+                }
+            }
         }
     }
 }
@@ -386,10 +471,10 @@ fun SkillCard(skill: SkillInfo) {
                 Text(
                     skill.description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onBackground
                 )
             }
-            Text("ID: ${skill.id}", style = MaterialTheme.typography.labelSmall, color = Color.DarkGray, modifier = Modifier.align(Alignment.End))
+            Text("ID: ${skill.id}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.align(Alignment.End).padding(top = 4.dp))
         }
     }
 }
@@ -397,11 +482,11 @@ fun SkillCard(skill: SkillInfo) {
 @Composable
 fun NoisyAmbientBackground(primaryColor: Color, accentColor: Color) {
     val noiseDots = remember {
-        List(1500) {
+        List(1000) { 
             val x = (0f..1f).random()
             val y = (0f..1f).random()
-            val alpha = (0.01f..0.08f).random()
-            val size = (0.5f..1.5f).random()
+            val alpha = (0.01f..0.06f).random()
+            val size = (0.5f..1.2f).random()
             Triple(androidx.compose.ui.geometry.Offset(x, y), alpha, size)
         }
     }
@@ -412,7 +497,6 @@ fun NoisyAmbientBackground(primaryColor: Color, accentColor: Color) {
             .background(NousBlack)
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            // Blob 1: Primary Color (Top Right)
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(primaryColor.copy(alpha = 0.15f), Color.Transparent),
@@ -423,7 +507,6 @@ fun NoisyAmbientBackground(primaryColor: Color, accentColor: Color) {
                 radius = size.width * 0.8f
             )
 
-            // Blob 2: Accent Color (Center Left)
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(accentColor.copy(alpha = 0.12f), Color.Transparent),
@@ -434,7 +517,6 @@ fun NoisyAmbientBackground(primaryColor: Color, accentColor: Color) {
                 radius = size.width * 0.9f
             )
 
-            // Blob 3: Primary mixed (Bottom Right)
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(primaryColor.copy(alpha = 0.1f), Color.Transparent),
@@ -468,7 +550,7 @@ fun SetupScreen(onSave: (String, String) -> Unit) {
     var url by remember { mutableStateOf("https://hermes-agent.nousresearch.com/") }
     
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -476,12 +558,14 @@ fun SetupScreen(onSave: (String, String) -> Unit) {
             "INITIALIZATION REQUIRED", 
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Black,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.Center
         )
         Text(
             "CONFIGURE YOUR HERMES NODE", 
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.tertiary
+            color = MaterialTheme.colorScheme.tertiary,
+            textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(32.dp))
         
@@ -537,7 +621,7 @@ fun SetupScreen(onSave: (String, String) -> Unit) {
 
 
 @Composable
-fun ChatHistory(messages: List<Message>, modifier: Modifier = Modifier) {
+fun ChatHistory(messages: List<Message>, maxBubbleWidth: androidx.compose.ui.unit.Dp) {
     val listState = rememberLazyListState()
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     val clipboardManager = LocalClipboardManager.current
@@ -550,8 +634,8 @@ fun ChatHistory(messages: List<Message>, modifier: Modifier = Modifier) {
 
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(vertical = 16.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(messages) { message ->
@@ -576,37 +660,48 @@ fun ChatHistory(messages: List<Message>, modifier: Modifier = Modifier) {
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
                 }
-                    Box(
-                        modifier = Modifier
-                            .wrapContentWidth()
-                            .widthIn(max = 300.dp)
-                            .border(
-                                BorderStroke(1.dp, if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
-                                RectangleShape
-                            )
-                            .background(if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
-                            .combinedClickable(
-                                onClick = {},
-                                onLongClick = { showMenu = true }
-                            )
-                            .padding(12.dp)
-                    ) {
-                        Markdown(content = message.content)
-                        
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Copy", style = MaterialTheme.typography.bodySmall) },
-                                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                                onClick = {
-                                    clipboardManager.setText(AnnotatedString(message.content))
-                                    showMenu = false
-                                }
+                Box(
+                    modifier = Modifier
+                        .wrapContentWidth()
+                        .widthIn(max = maxBubbleWidth)
+                        .border(
+                            BorderStroke(1.dp, if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                            RectangleShape
+                        )
+                        .background(if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.05f) else Color.Black.copy(alpha = 0.2f))
+                        .combinedClickable(
+                            onClick = {},
+                            onLongClick = { showMenu = true }
+                        )
+                        .padding(12.dp)
+                ) {
+                    Column {
+                        if (message.imageUrl != null) {
+                            AsyncImage(
+                                model = message.imageUrl,
+                                contentDescription = "Image attachment",
+                                modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp).clip(RectangleShape).padding(bottom = 8.dp),
+                                contentScale = ContentScale.Crop
                             )
                         }
+                        val content = remember(message.content) { message.content }
+                        Markdown(content = content)
                     }
+                    
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Copy", style = MaterialTheme.typography.bodySmall) },
+                            leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(message.content))
+                                showMenu = false
+                            }
+                        )
+                    }
+                }
             }
         }
     }
@@ -629,13 +724,8 @@ fun SettingsScreen(viewModel: HermesViewModel, onBack: () -> Unit) {
 
     var editUrl by remember { mutableStateOf(viewModel.getBaseUrl()) }
     var editKey by remember { mutableStateOf(viewModel.getApiKey()) }
-
-    val options = listOf(
-        "DISABLED" to 0L,
-        "1 HOUR" to 3600_000L,
-        "24 HOURS" to 86400_000L,
-        "7 DAYS" to 604800_000L
-    )
+    
+    val context = LocalContext.current
 
     BackHandler(onBack = onBack)
 
@@ -842,6 +932,12 @@ fun SettingsScreen(viewModel: HermesViewModel, onBack: () -> Unit) {
                 Text("RETENTION POLICY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                 Spacer(modifier = Modifier.height(8.dp))
             }
+            val options = listOf(
+                "DISABLED" to 0L,
+                "1 HOUR" to 3600_000L,
+                "24 HOURS" to 86400_000L,
+                "7 DAYS" to 604800_000L
+            )
             items(options) { (label, period) ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -861,6 +957,15 @@ fun SettingsScreen(viewModel: HermesViewModel, onBack: () -> Unit) {
                 }
             }
             item {
+                Spacer(Modifier.height(32.dp))
+                Button(
+                    onClick = { viewModel.wipeSystem(context) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                    shape = RectangleShape,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("WIPE ALL DATA", color = Color.White, fontWeight = FontWeight.Bold)
+                }
                 Spacer(Modifier.height(32.dp))
             }
         }
@@ -892,38 +997,105 @@ fun ColorPicker(selectedColor: String, onColorSelected: (String) -> Unit) {
 }
 
 @Composable
-fun ChatInput(onSend: (String) -> Unit) {
+fun ChatInput(onSend: (String, Uri?) -> Unit) {
     var message by remember { mutableStateOf("") }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        TextField(
-            value = message,
-            onValueChange = { message = it },
-            placeholder = { Text("INPUT_MESSAGE_PROMPT...", color = MaterialTheme.colorScheme.outline) },
-            modifier = Modifier.weight(1f),
-            shape = RectangleShape,
-            textStyle = MaterialTheme.typography.bodyMedium,
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-                focusedIndicatorColor = MaterialTheme.colorScheme.primary,
-                unfocusedIndicatorColor = MaterialTheme.colorScheme.outline
-            )
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Button(
-            onClick = {
-                if (message.isNotBlank()) {
-                    onSend(message)
-                    message = ""
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    
+    val imagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        selectedImageUri = uri
+    }
+
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        if (selectedImageUri != null) {
+            Box(Modifier.size(80.dp).padding(bottom = 8.dp)) {
+                AsyncImage(
+                    model = selectedImageUri,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize().clip(RectangleShape).border(1.dp, MaterialTheme.colorScheme.primary),
+                    contentScale = ContentScale.Crop
+                )
+                IconButton(
+                    onClick = { selectedImageUri = null },
+                    modifier = Modifier.size(24.dp).align(Alignment.TopEnd).background(Color.Black, CircleShape)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(14.dp))
                 }
-            },
-            shape = RectangleShape,
-            modifier = Modifier.height(56.dp)
-        ) {
-            Text("SEND")
+            }
+        }
+        
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { imagePicker.launch("image/*") }) {
+                Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Send Image", tint = MaterialTheme.colorScheme.primary)
+            }
+            TextField(
+                value = message,
+                onValueChange = { message = it },
+                placeholder = { Text("INPUT_MESSAGE_PROMPT...", color = MaterialTheme.colorScheme.outline) },
+                modifier = Modifier.weight(1f),
+                shape = RectangleShape,
+                textStyle = MaterialTheme.typography.bodyMedium,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+                    unfocusedIndicatorColor = MaterialTheme.colorScheme.outline
+                )
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = {
+                    if (message.isNotBlank() || selectedImageUri != null) {
+                        onSend(message, selectedImageUri)
+                        message = ""
+                        selectedImageUri = null
+                    }
+                },
+                shape = RectangleShape,
+                modifier = Modifier.height(56.dp)
+            ) {
+                Text("SEND")
+            }
+        }
+    }
+}
+
+@Composable
+fun FlowRow(
+    modifier: Modifier = Modifier,
+    mainAxisSpacing: androidx.compose.ui.unit.Dp = 0.dp,
+    crossAxisSpacing: androidx.compose.ui.unit.Dp = 0.dp,
+    content: @Composable () -> Unit
+) {
+    androidx.compose.ui.layout.Layout(content, modifier) { measurables, constraints ->
+        val placeables = measurables.map { it.measure(constraints.copy(minWidth = 0)) }
+        val rows = mutableListOf<List<androidx.compose.ui.layout.Placeable>>()
+        var currentRow = mutableListOf<androidx.compose.ui.layout.Placeable>()
+        var currentRowWidth = 0
+        
+        placeables.forEach { placeable ->
+            if (currentRowWidth + placeable.width + mainAxisSpacing.roundToPx() > constraints.maxWidth && currentRow.isNotEmpty()) {
+                rows.add(currentRow)
+                currentRow = mutableListOf()
+                currentRowWidth = 0
+            }
+            currentRow.add(placeable)
+            currentRowWidth += placeable.width + mainAxisSpacing.roundToPx()
+        }
+        if (currentRow.isNotEmpty()) rows.add(currentRow)
+
+        val height = rows.sumOf { row -> row.maxOf { it.height } } + (rows.size - 1) * crossAxisSpacing.roundToPx()
+        layout(constraints.maxWidth, height) {
+            var y = 0
+            rows.forEach { row ->
+                var x = 0
+                row.forEach { placeable ->
+                    placeable.place(x, y)
+                    x += placeable.width + mainAxisSpacing.roundToPx()
+                }
+                y += row.maxOf { it.height } + crossAxisSpacing.roundToPx()
+            }
         }
     }
 }

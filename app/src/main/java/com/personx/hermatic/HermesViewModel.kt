@@ -1,18 +1,18 @@
 package com.personx.hermatic
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.personx.hermatic.data.model.Message
-import com.personx.hermatic.data.model.ModelInfo
-import com.personx.hermatic.data.model.SkillInfo
-import com.personx.hermatic.data.model.ToolsetInfo
+import com.personx.hermatic.data.model.*
 import com.personx.hermatic.data.repository.HermesRepository
 import com.personx.hermatic.security.SecurityManager
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.UUID
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class HermesViewModel(
     private val repository: HermesRepository,
     private val securityManager: SecurityManager,
@@ -66,12 +66,19 @@ class HermesViewModel(
     private val _isHermesTyping = MutableStateFlow(false)
     val isHermesTyping: StateFlow<Boolean> = _isHermesTyping
 
+    private val _sessions = MutableStateFlow<List<String>>(listOf("default"))
+    val sessions: StateFlow<List<String>> = _sessions
+
+    private val _currentSessionId = MutableStateFlow("default")
+    val currentSessionId: StateFlow<String> = _currentSessionId
+
     private var currentHistory = emptyList<Message>()
     private val streamingBotResponse = MutableStateFlow<String?>(null)
 
     init {
         checkApiKey()
         observeHistory()
+        observeSessions()
         triggerSelfDestruct()
         fetchInitialData()
     }
@@ -80,9 +87,13 @@ class HermesViewModel(
         if (securityManager.getApiKey().isNullOrBlank()) return
         
         viewModelScope.launch {
-            fetchModels()
-            fetchSkills()
-            fetchDiagnostics()
+            try {
+                fetchModels()
+                fetchSkills()
+                fetchDiagnostics()
+            } catch (e: Exception) {
+                // Ignore silent failures
+            }
         }
     }
 
@@ -100,7 +111,6 @@ class HermesViewModel(
         viewModelScope.launch {
             val diag = mutableMapOf<String, String>()
             diag["Capabilities"] = repository.getCapabilities()
-            diag["Sessions"] = repository.getSessions()
             diag["Jobs"] = repository.getJobs()
             _rawDiagnostics.value = diag
         }
@@ -124,17 +134,26 @@ class HermesViewModel(
     }
 
     private fun observeHistory() {
-        viewModelScope.launch {
-            repository.getChatHistory().collectLatest { history ->
-                currentHistory = history
-                updateUiState()
+        _currentSessionId.flatMapLatest { sessionId ->
+            repository.getChatHistory(sessionId)
+        }.onEach { history ->
+            currentHistory = history
+            updateUiState()
+        }.launchIn(viewModelScope)
+
+        streamingBotResponse.onEach {
+            updateUiState()
+        }.launchIn(viewModelScope)
+    }
+    
+    private fun observeSessions() {
+        repository.getSessions().onEach { sessionIds ->
+            if (sessionIds.isEmpty()) {
+                _sessions.value = listOf("default")
+            } else {
+                _sessions.value = sessionIds
             }
-        }
-        viewModelScope.launch {
-            streamingBotResponse.collectLatest { _ ->
-                updateUiState()
-            }
-        }
+        }.launchIn(viewModelScope)
     }
 
     private fun updateUiState() {
@@ -174,13 +193,25 @@ class HermesViewModel(
     fun getBaseUrl(): String = securityManager.getBaseUrl()
     fun getApiKey(): String = securityManager.getApiKey() ?: ""
 
-    fun sendMessage(text: String) {
+    fun sendMessage(context: Context, text: String, imageUri: Uri? = null) {
         viewModelScope.launch {
             try {
                 _isHermesTyping.value = true
-                val userMsg = Message(role = "user", content = text)
+                
+                // Convert image to base64 if present
+                val base64Image = imageUri?.let { repository.uriToBase64(context, it) }
+                val userMsg = Message(
+                    role = "user", 
+                    content = text,
+                    imageUrl = imageUri?.toString() // We save the URI for local display
+                )
+                
+                // For the API, if we had vision we'd use the base64Image
+                // For now, we'll just send the text as the content
+
                 var botResponse = ""
                 repository.chatStream(
+                    sessionId = _currentSessionId.value,
                     messages = currentHistory + userMsg,
                     model = _selectedModel.value,
                     temperature = _temperature.value,
@@ -202,8 +233,17 @@ class HermesViewModel(
 
     fun clearHistory() {
         viewModelScope.launch {
-            repository.clearHistory()
+            repository.clearHistory(_currentSessionId.value)
         }
+    }
+    
+    fun startNewSession() {
+        val newId = "session_${UUID.randomUUID().toString().take(8)}"
+        _currentSessionId.value = newId
+    }
+    
+    fun switchSession(id: String) {
+        _currentSessionId.value = id
     }
 
     fun setSelfDestructPeriod(periodMs: Long) {
@@ -252,11 +292,13 @@ class HermesViewModel(
         _isDarkMode.value = enabled
     }
 
-    fun wipeSystem(context: android.content.Context) {
+    fun wipeSystem(context: Context) {
         viewModelScope.launch {
             securityManager.wipeAllData(context)
             _uiState.value = HermesUiState.NoApiKey
             currentHistory = emptyList()
+            _sessions.value = listOf("default")
+            _currentSessionId.value = "default"
         }
     }
 }

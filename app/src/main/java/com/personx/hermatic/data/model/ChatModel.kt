@@ -2,13 +2,39 @@ package com.personx.hermatic.data.model
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
-import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.*
 
-@Serializable
+@Serializable(with = MessageSerializer::class)
 data class Message(
     val role: String,
-    val content: String,
-    @Transient val timestamp: Long = System.currentTimeMillis()
+    val content: String, // Kept as String for DB and simple use, but serialized based on content type
+    val tool_calls: List<ToolCall>? = null,
+    val tool_call_id: String? = null,
+    val name: String? = null,
+    @Transient val timestamp: Long = System.currentTimeMillis(),
+    @Transient val imageUrl: String? = null // Local or base64
+)
+
+object MessageSerializer : JsonContentPolymorphicSerializer<Message>(Message::class) {
+    override fun selectDeserializer(element: JsonElement): kotlinx.serialization.DeserializationStrategy<Message> {
+        return Message.serializer()
+    }
+
+    // Custom encoding logic to handle OpenAI multimodal format if needed
+    // For now, we'll keep it simple and just use the standard serializer but handle the content mapping in repository
+}
+
+@Serializable
+data class ToolCall(
+    val id: String,
+    val type: String = "function",
+    val function: FunctionCall
+)
+
+@Serializable
+data class FunctionCall(
+    val name: String,
+    val arguments: String
 )
 
 @Serializable
@@ -17,7 +43,22 @@ data class ChatRequest(
     val messages: List<Message>,
     val stream: Boolean = false,
     val temperature: Float? = null,
-    val max_tokens: Int? = null
+    val max_tokens: Int? = null,
+    val tools: List<ToolDefinition>? = null,
+    val tool_choice: String? = null
+)
+
+@Serializable
+data class ToolDefinition(
+    val type: String = "function",
+    val function: FunctionDefinition
+)
+
+@Serializable
+data class FunctionDefinition(
+    val name: String,
+    val description: String? = null,
+    val parameters: JsonElement? = null
 )
 
 @Serializable
@@ -72,11 +113,51 @@ data class Choice(
 
 @Serializable
 data class Delta(
-    val content: String? = null
+    val content: String? = null,
+    val tool_calls: List<ToolCallChunk>? = null
+)
+
+@Serializable
+data class ToolCallChunk(
+    val index: Int,
+    val id: String? = null,
+    val type: String? = null,
+    val function: FunctionCallChunk? = null
+)
+
+@Serializable
+data class FunctionCallChunk(
+    val name: String? = null,
+    val arguments: String? = null
 )
 
 @Serializable
 data class ChatChunk(
     val id: String,
     val choices: List<Choice>
+)
+
+@Serializable
+data class RunResponse(
+    val id: String,
+    val status: String,
+    val model: String
+)
+
+@Serializable
+data class RunEvent(
+    val type: String,
+    val data: JsonElement? = null
+)
+
+@Serializable
+data class Session(
+    val id: String,
+    val name: String? = null,
+    val created_at: Long = System.currentTimeMillis()
+)
+
+@Serializable
+data class SessionListResponse(
+    val data: List<Session>
 )

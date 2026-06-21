@@ -1,15 +1,8 @@
 package com.personx.hermatic.data.api
 
-import com.personx.hermatic.data.model.ChatRequest
-import com.personx.hermatic.data.model.ChatResponse
-import com.personx.hermatic.data.model.ModelListResponse
-import com.personx.hermatic.data.model.SkillListResponse
-import com.personx.hermatic.data.model.ToolsetListResponse
+import com.personx.hermatic.data.model.*
 import okhttp3.ResponseBody
-import retrofit2.http.Body
-import retrofit2.http.GET
-import retrofit2.http.POST
-import retrofit2.http.Streaming
+import retrofit2.http.*
 
 interface HermesApi {
     @POST("v1/chat/completions")
@@ -29,13 +22,28 @@ interface HermesApi {
     suspend fun getToolsets(): ToolsetListResponse
 
     @GET("v1/capabilities")
-    suspend fun getCapabilities(): okhttp3.ResponseBody
+    suspend fun getCapabilities(): ResponseBody
 
+    // Sessions API
     @GET("api/sessions")
-    suspend fun getSessions(): okhttp3.ResponseBody
+    suspend fun getSessions(): SessionListResponse
+
+    @POST("api/sessions")
+    suspend fun createSession(@Body body: Map<String, String>): Session
+
+    @GET("api/sessions/{id}/messages")
+    suspend fun getSessionMessages(@Path("id") id: String): List<Message>
+
+    // Runs API
+    @POST("v1/runs")
+    suspend fun createRun(@Body request: ChatRequest): RunResponse
+
+    @Streaming
+    @GET("v1/runs/{id}/events")
+    suspend fun getRunEvents(@Path("id") id: String): ResponseBody
 
     @GET("api/jobs")
-    suspend fun getJobs(): okhttp3.ResponseBody
+    suspend fun getJobs(): ResponseBody
 
     @GET("health")
     suspend fun checkHealth(): ResponseBody
