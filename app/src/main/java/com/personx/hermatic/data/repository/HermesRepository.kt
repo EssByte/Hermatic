@@ -92,12 +92,12 @@ class HermesRepository(
         chatDao.clearHistory()
     }
 
-    suspend fun checkHealth(): Boolean {
+    suspend fun checkHealth(): Result<Unit> {
         return try {
             api.checkHealth()
-            true
+            Result.success(Unit)
         } catch (e: Exception) {
-            false
+            Result.failure(e)
         }
     }
 
