@@ -12,7 +12,10 @@ Hermatic is a secure, private Android client for the **Hermes Agent** API. It fo
     - **Privacy Screen**: App content is automatically obscured in the multitasking/recents menu (FLAG_SECURE).
     - **Automatic Authentication**: Bearer Token injection via OkHttp Interceptors.
 - **Streaming Responses**: Real-time word-by-word bot responses for a responsive experience.
-- **Modern UI**: Built entirely with **Jetpack Compose** for a smooth, reactive user experience.
+- **Modern UI**: Built entirely with **Jetpack Compose**, following a high-contrast "Noir" aesthetic inspired by the Nous Research portal.
+    - Technical monospace typography.
+    - Minimalist, structured "Art Gallery" layout with sharp-cornered components.
+    - Real-time auto-scrolling chat history.
 - **Clean Architecture**: Follows MVVM (Model-View-ViewModel) and Repository patterns.
 
 ## Tech Stack
