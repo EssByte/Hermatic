@@ -35,4 +35,14 @@ class SecurityManager(context: Context) {
             newKey.toByteArray()
         }
     }
+
+    fun setSelfDestructPeriod(periodMs: Long) {
+        sharedPreferences.edit().putLong("self_destruct_period", periodMs).apply()
+    }
+
+    fun getSelfDestructPeriod(): Long {
+        // Default to 24 hours (24 * 60 * 60 * 1000)
+        // 0 means disabled
+        return sharedPreferences.getLong("self_destruct_period", 0L)
+    }
 }

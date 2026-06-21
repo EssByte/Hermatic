@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
@@ -73,8 +74,20 @@ class MainActivity : FragmentActivity() {
                                 CenterAlignedTopAppBar(
                                     title = { Text("Hermatic") },
                                     actions = {
+                                        var showSettings by remember { mutableStateOf(false) }
+                                        
+                                        IconButton(onClick = { showSettings = true }) {
+                                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                                        }
                                         IconButton(onClick = { viewModel.clearHistory() }) {
                                             Icon(Icons.Default.Delete, contentDescription = "Clear Chat")
+                                        }
+                                        
+                                        if (showSettings) {
+                                            SettingsDialog(
+                                                viewModel = viewModel,
+                                                onDismiss = { showSettings = false }
+                                            )
                                         }
                                     }
                                 )
@@ -168,6 +181,47 @@ fun ApiKeyScreen(onSave: (String) -> Unit) {
             Text("Save")
         }
     }
+}
+
+@Composable
+fun SettingsDialog(viewModel: HermesViewModel, onDismiss: () -> Unit) {
+    val currentPeriod = viewModel.getSelfDestructPeriod()
+    val options = listOf(
+        "Disabled" to 0L,
+        "1 Hour" to 3600_000L,
+        "24 Hours" to 86400_000L,
+        "7 Days" to 604800_000L
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Settings") },
+        text = {
+            Column {
+                Text("Self-Destruct Messages", style = MaterialTheme.typography.labelLarge)
+                Spacer(modifier = Modifier.height(8.dp))
+                options.forEach { (label, period) ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                    ) {
+                        RadioButton(
+                            selected = currentPeriod == period,
+                            onClick = { 
+                                viewModel.setSelfDestructPeriod(period)
+                            }
+                        )
+                        Text(text = label, modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
 }
 
 @Composable

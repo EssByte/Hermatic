@@ -24,6 +24,16 @@ class HermesViewModel(
     init {
         checkApiKey()
         observeHistory()
+        triggerSelfDestruct()
+    }
+
+    private fun triggerSelfDestruct() {
+        viewModelScope.launch {
+            val period = securityManager.getSelfDestructPeriod()
+            if (period > 0) {
+                repository.performSelfDestruct(period)
+            }
+        }
     }
 
     private fun checkApiKey() {
@@ -89,6 +99,15 @@ class HermesViewModel(
         viewModelScope.launch {
             repository.clearHistory()
         }
+    }
+
+    fun setSelfDestructPeriod(periodMs: Long) {
+        securityManager.setSelfDestructPeriod(periodMs)
+        triggerSelfDestruct()
+    }
+
+    fun getSelfDestructPeriod(): Long {
+        return securityManager.getSelfDestructPeriod()
     }
 }
 

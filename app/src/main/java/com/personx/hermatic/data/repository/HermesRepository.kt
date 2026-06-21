@@ -78,4 +78,9 @@ class HermesRepository(
     suspend fun clearHistory() {
         chatDao.clearHistory()
     }
+
+    suspend fun performSelfDestruct(retentionPeriodMs: Long) {
+        val threshold = System.currentTimeMillis() - retentionPeriodMs
+        chatDao.deleteMessagesOlderThan(threshold)
+    }
 }
