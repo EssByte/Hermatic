@@ -24,4 +24,15 @@ class SecurityManager(context: Context) {
     fun getApiKey(): String? {
         return sharedPreferences.getString("api_key", null)
     }
+
+    fun getDatabasePassphrase(): ByteArray {
+        val key = sharedPreferences.getString("db_passphrase", null)
+        return if (key != null) {
+            key.toByteArray()
+        } else {
+            val newKey = java.util.UUID.randomUUID().toString()
+            sharedPreferences.edit().putString("db_passphrase", newKey).apply()
+            newKey.toByteArray()
+        }
+    }
 }

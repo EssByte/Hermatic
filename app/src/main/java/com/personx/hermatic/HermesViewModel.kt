@@ -7,6 +7,7 @@ import com.personx.hermatic.data.repository.HermesRepository
 import com.personx.hermatic.security.SecurityManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 class HermesViewModel(
@@ -17,39 +18,54 @@ class HermesViewModel(
     private val _uiState = MutableStateFlow<HermesUiState>(HermesUiState.Loading)
     val uiState: StateFlow<HermesUiState> = _uiState
 
-    private val history = mutableListOf<Message>()
+    private var currentHistory = emptyList<Message>()
 
     init {
         checkApiKey()
+        observeHistory()
     }
 
     private fun checkApiKey() {
         if (securityManager.getApiKey().isNullOrBlank()) {
             _uiState.value = HermesUiState.NoApiKey
-        } else {
+        } else if (_uiState.value == HermesUiState.Loading) {
             _uiState.value = HermesUiState.Idle
+        }
+    }
+
+    private fun observeHistory() {
+        viewModelScope.launch {
+            repository.getChatHistory().collectLatest { history ->
+                currentHistory = history
+                if (_uiState.value !is HermesUiState.NoApiKey) {
+                    _uiState.value = HermesUiState.Chatting(history)
+                }
+            }
         }
     }
 
     fun saveApiKey(key: String) {
         securityManager.saveApiKey(key)
         _uiState.value = HermesUiState.Idle
+        checkApiKey()
     }
 
     fun sendMessage(text: String) {
-        val userMsg = Message(role = "user", content = text)
-        history.add(userMsg)
-        _uiState.value = HermesUiState.Chatting(history.toList())
-        
         viewModelScope.launch {
+            // We don't manually add to currentHistory here because the observer will pick it up
+            // when it's saved to the database in the repository.
+            // But we can show a temporary state if needed.
             try {
-                val response = repository.chat(history)
-                val botMsg = Message(role = "assistant", content = response)
-                history.add(botMsg)
-                _uiState.value = HermesUiState.Chatting(history.toList())
+                repository.chat(currentHistory + Message(role = "user", content = text))
             } catch (e: Exception) {
-                _uiState.value = HermesUiState.Error(e.message ?: "Unknown error", history.toList())
+                _uiState.value = HermesUiState.Error(e.message ?: "Unknown error", currentHistory)
             }
+        }
+    }
+
+    fun clearHistory() {
+        viewModelScope.launch {
+            repository.clearHistory()
         }
     }
 }
