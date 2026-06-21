@@ -60,6 +60,7 @@ dependencies {
 
     // Security
     implementation(libs.androidx.security.crypto)
+    implementation(libs.androidx.biometric)
 
     // Room
     implementation(libs.androidx.room.runtime)

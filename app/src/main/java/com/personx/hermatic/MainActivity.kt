@@ -2,7 +2,6 @@ package com.personx.hermatic
 
 import android.os.Bundle
 import android.view.WindowManager
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -19,16 +18,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personx.hermatic.data.api.ApiClient
 import com.personx.hermatic.data.db.HermesDatabase
 import com.personx.hermatic.data.model.Message
 import com.personx.hermatic.data.repository.HermesRepository
+import com.personx.hermatic.security.BiometricHelper
 import com.personx.hermatic.security.SecurityManager
 import com.personx.hermatic.ui.theme.HermaticTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private lateinit var securityManager: SecurityManager
     private lateinit var repository: HermesRepository
 
@@ -42,46 +43,49 @@ class MainActivity : ComponentActivity() {
         
         repository = HermesRepository(apiClient.hermesApi, database.chatDao(), apiClient.json)
 
+        val biometricHelper = BiometricHelper(this)
+        val isAuthenticated = mutableStateOf(false)
+
+        biometricHelper.authenticate(
+            onSuccess = { isAuthenticated.value = true },
+            onError = { /* Handle error */ }
+        )
+
         enableEdgeToEdge()
         setContent {
             HermaticTheme {
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    topBar = {
-                        CenterAlignedTopAppBar(
-                            title = { Text("Hermatic") },
-                            actions = {
-                                IconButton(onClick = { /* We need viewModel reference here or use a callback */ }) {
-                                    // This is just a placeholder, I'll update it inside setContent
+                if (isAuthenticated.value) {
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize()
+                    ) { innerPadding ->
+                        val viewModel: HermesViewModel = viewModel(
+                            factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+                                @Suppress("UNCHECKED_CAST")
+                                override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                                    return HermesViewModel(repository, securityManager) as T
                                 }
                             }
                         )
-                    }
-                ) { innerPadding ->
-                    val viewModel: HermesViewModel = viewModel(
-                        factory = object : androidx.lifecycle.ViewModelProvider.Factory {
-                            @Suppress("UNCHECKED_CAST")
-                            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                                return HermesViewModel(repository, securityManager) as T
-                            }
-                        }
-                    )
-                    
-                    // Actual Scaffold with viewModel access
-                    Scaffold(
-                        modifier = Modifier.padding(innerPadding),
-                        topBar = {
-                            CenterAlignedTopAppBar(
-                                title = { Text("Hermatic") },
-                                actions = {
-                                    IconButton(onClick = { viewModel.clearHistory() }) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Clear Chat")
+                        
+                        Scaffold(
+                            modifier = Modifier.padding(innerPadding),
+                            topBar = {
+                                CenterAlignedTopAppBar(
+                                    title = { Text("Hermatic") },
+                                    actions = {
+                                        IconButton(onClick = { viewModel.clearHistory() }) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Clear Chat")
+                                        }
                                     }
-                                }
-                            )
+                                )
+                            }
+                        ) { chatPadding ->
+                            HermesApp(viewModel, Modifier.padding(chatPadding))
                         }
-                    ) { chatPadding ->
-                        HermesApp(viewModel, Modifier.padding(chatPadding))
+                    }
+                } else {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Authentication required")
                     }
                 }
             }
