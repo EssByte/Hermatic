@@ -5,20 +5,35 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class Message(
     val role: String,
-    val content: String
+    val content: String,
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 @Serializable
 data class ChatRequest(
     val model: String = "hermes-agent",
     val messages: List<Message>,
-    val stream: Boolean = false
+    val stream: Boolean = false,
+    val temperature: Float? = null,
+    val max_tokens: Int? = null
 )
 
 @Serializable
 data class ChatResponse(
     val id: String,
-    val choices: List<Choice>
+    val choices: List<Choice>,
+    val model: String? = null
+)
+
+@Serializable
+data class ModelListResponse(
+    val data: List<ModelInfo>
+)
+
+@Serializable
+data class ModelInfo(
+    val id: String,
+    val owned_by: String? = null
 )
 
 @Serializable

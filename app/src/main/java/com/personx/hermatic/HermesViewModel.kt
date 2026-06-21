@@ -3,6 +3,7 @@ package com.personx.hermatic
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.personx.hermatic.data.model.Message
+import com.personx.hermatic.data.model.ModelInfo
 import com.personx.hermatic.data.repository.HermesRepository
 import com.personx.hermatic.security.SecurityManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,27 @@ class HermesViewModel(
     private val _uiState = MutableStateFlow<HermesUiState>(HermesUiState.Loading)
     val uiState: StateFlow<HermesUiState> = _uiState
 
+    private val _isBiometricEnabled = MutableStateFlow(securityManager.isBiometricEnabled())
+    val isBiometricEnabled: StateFlow<Boolean> = _isBiometricEnabled
+
+    private val _selfDestructPeriod = MutableStateFlow(securityManager.getSelfDestructPeriod())
+    val selfDestructPeriod: StateFlow<Long> = _selfDestructPeriod
+
+    private val _systemPrompt = MutableStateFlow(securityManager.getSystemPrompt())
+    val systemPrompt: StateFlow<String> = _systemPrompt
+
+    private val _temperature = MutableStateFlow(securityManager.getTemperature())
+    val temperature: StateFlow<Float> = _temperature
+
+    private val _maxTokens = MutableStateFlow(securityManager.getMaxTokens())
+    val maxTokens: StateFlow<Int> = _maxTokens
+
+    private val _selectedModel = MutableStateFlow(securityManager.getSelectedModel())
+    val selectedModel: StateFlow<String> = _selectedModel
+
+    private val _availableModels = MutableStateFlow<List<ModelInfo>>(emptyList())
+    val availableModels: StateFlow<List<ModelInfo>> = _availableModels
+
     private var currentHistory = emptyList<Message>()
     private val streamingBotResponse = MutableStateFlow<String?>(null)
 
@@ -25,6 +47,14 @@ class HermesViewModel(
         checkApiKey()
         observeHistory()
         triggerSelfDestruct()
+        fetchModels()
+    }
+
+    private fun fetchModels() {
+        viewModelScope.launch {
+            val models = repository.getModels()
+            _availableModels.value = models
+        }
     }
 
     private fun triggerSelfDestruct() {
@@ -69,21 +99,26 @@ class HermesViewModel(
         _uiState.value = HermesUiState.Chatting(historyWithStream)
     }
 
-    fun saveApiKey(key: String) {
+    fun saveConfig(key: String, url: String) {
         securityManager.saveApiKey(key)
+        securityManager.saveBaseUrl(url)
         _uiState.value = HermesUiState.Idle
         checkApiKey()
+        fetchModels()
     }
 
     fun sendMessage(text: String) {
         viewModelScope.launch {
             try {
                 val userMsg = Message(role = "user", content = text)
-                // Note: repository.chatStream will save userMsg to DB, 
-                // which will trigger observeHistory and update currentHistory.
-                
                 var botResponse = ""
-                repository.chatStream(currentHistory + userMsg).collect { chunk ->
+                repository.chatStream(
+                    messages = currentHistory + userMsg,
+                    model = _selectedModel.value,
+                    temperature = _temperature.value,
+                    maxTokens = _maxTokens.value,
+                    systemPrompt = _systemPrompt.value
+                ).collect { chunk ->
                     botResponse += chunk
                     streamingBotResponse.value = botResponse
                 }
@@ -103,11 +138,33 @@ class HermesViewModel(
 
     fun setSelfDestructPeriod(periodMs: Long) {
         securityManager.setSelfDestructPeriod(periodMs)
+        _selfDestructPeriod.value = periodMs
         triggerSelfDestruct()
     }
 
-    fun getSelfDestructPeriod(): Long {
-        return securityManager.getSelfDestructPeriod()
+    fun setBiometricEnabled(enabled: Boolean) {
+        securityManager.setBiometricEnabled(enabled)
+        _isBiometricEnabled.value = enabled
+    }
+
+    fun setSystemPrompt(prompt: String) {
+        securityManager.saveSystemPrompt(prompt)
+        _systemPrompt.value = prompt
+    }
+
+    fun setTemperature(temp: Float) {
+        securityManager.saveTemperature(temp)
+        _temperature.value = temp
+    }
+
+    fun setMaxTokens(tokens: Int) {
+        securityManager.saveMaxTokens(tokens)
+        _maxTokens.value = tokens
+    }
+
+    fun setSelectedModel(model: String) {
+        securityManager.saveSelectedModel(model)
+        _selectedModel.value = model
     }
 }
 

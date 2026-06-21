@@ -11,5 +11,5 @@ data class ChatMessageEntity(
     val timestamp: Long = System.currentTimeMillis()
 )
 
-fun ChatMessageEntity.toMessage() = Message(role = role, content = content)
-fun Message.toEntity() = ChatMessageEntity(role = role, content = content)
+fun ChatMessageEntity.toMessage() = Message(role = role, content = content, timestamp = timestamp)
+fun Message.toEntity() = ChatMessageEntity(role = role, content = content, timestamp = timestamp)

@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
@@ -38,11 +39,16 @@ import com.personx.hermatic.data.repository.HermesRepository
 import com.personx.hermatic.security.BiometricHelper
 import com.personx.hermatic.security.SecurityManager
 import com.personx.hermatic.ui.theme.*
+import java.text.SimpleDateFormat
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : FragmentActivity() {
     private lateinit var securityManager: SecurityManager
     private lateinit var repository: HermesRepository
+
+    private val isAuthenticated = mutableStateOf(false)
+    private val authErrorMessage = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,23 +58,20 @@ class MainActivity : FragmentActivity() {
         val database = HermesDatabase.getDatabase(this, securityManager)
         val apiClient = ApiClient(securityManager)
         
-        repository = HermesRepository(apiClient.hermesApi, database.chatDao(), apiClient.json)
+        repository = HermesRepository(apiClient, database.chatDao(), apiClient.json)
 
-        val biometricHelper = BiometricHelper(this)
-        val isAuthenticated = mutableStateOf(false)
-
-        biometricHelper.authenticate(
-            onSuccess = { isAuthenticated.value = true },
-            onError = { /* Handle error */ }
-        )
+        performAuthentication()
 
         enableEdgeToEdge()
         setContent {
             HermaticTheme {
+                val authed by isAuthenticated
+                val error by authErrorMessage
+                
                 Box(Modifier.fillMaxSize()) {
                     NoisyAmbientBackground()
                     
-                    if (isAuthenticated.value) {
+                    if (authed) {
                         Scaffold(
                             modifier = Modifier.fillMaxSize(),
                             containerColor = Color.Transparent
@@ -122,59 +125,94 @@ class MainActivity : FragmentActivity() {
                         }
                     } else {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                if (error != null) {
+                                    Text("Authentication Error: $error", color = Color.Red)
+                                    Spacer(Modifier.height(16.dp))
+                                    Button(onClick = { performAuthentication() }, shape = RectangleShape) {
+                                        Text("RETRY AUTHENTICATION")
+                                    }
+                                } else {
+                                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
                         }
                     }
                 }
             }
         }
     }
+
+    private fun performAuthentication() {
+        val biometricHelper = BiometricHelper(this)
+        authErrorMessage.value = null
+
+        if (securityManager.isBiometricEnabled() && biometricHelper.canAuthenticate()) {
+            biometricHelper.authenticate(
+                onSuccess = { isAuthenticated.value = true },
+                onError = { message -> authErrorMessage.value = message }
+            )
+        } else {
+            isAuthenticated.value = true
+        }
+    }
 }
 
 @Composable
 fun NoisyAmbientBackground() {
-    val configuration = LocalConfiguration.current
-    val screenHeight = configuration.screenHeightDp.dp
-    val screenWidth = configuration.screenWidthDp.dp
+    val noiseDots = remember {
+        List(1500) {
+            val x = (0f..1f).random()
+            val y = (0f..1f).random()
+            val alpha = (0.01f..0.08f).random()
+            val size = (0.5f..1.5f).random()
+            Triple(androidx.compose.ui.geometry.Offset(x, y), alpha, size)
+        }
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(NousBlack)
     ) {
-        // Blurred Blobs
-        Box(
-            modifier = Modifier
-                .offset(x = screenWidth * 0.5f, y = screenHeight * 0.1f)
-                .size(300.dp)
-                .blur(100.dp)
-                .background(BlobGreen, RoundedCornerShape(150.dp))
-        )
-        Box(
-            modifier = Modifier
-                .offset(x = (-100).dp, y = screenHeight * 0.4f)
-                .size(350.dp)
-                .blur(120.dp)
-                .background(BlobBlue, RoundedCornerShape(175.dp))
-        )
-        Box(
-            modifier = Modifier
-                .offset(x = screenWidth * 0.2f, y = screenHeight * 0.7f)
-                .size(280.dp)
-                .blur(90.dp)
-                .background(BlobPurple, RoundedCornerShape(140.dp))
-        )
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(BlobGreen, Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(size.width * 0.8f, size.height * 0.1f),
+                    radius = size.width * 0.8f
+                ),
+                center = androidx.compose.ui.geometry.Offset(size.width * 0.8f, size.height * 0.1f),
+                radius = size.width * 0.8f
+            )
 
-        // Noise Overlay
-        Canvas(modifier = Modifier.fillMaxSize().graphicsLayer(alpha = 0.45f)) {
-            val count = 5000
-            for (i in 0 until count) {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(BlobBlue, Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(size.width * 0.0f, size.height * 0.5f),
+                    radius = size.width * 0.9f
+                ),
+                center = androidx.compose.ui.geometry.Offset(size.width * 0.0f, size.height * 0.5f),
+                radius = size.width * 0.9f
+            )
+
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(BlobPurple, Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(size.width * 0.5f, size.height * 0.9f),
+                    radius = size.width * 0.7f
+                ),
+                center = androidx.compose.ui.geometry.Offset(size.width * 0.5f, size.height * 0.9f),
+                radius = size.width * 0.7f
+            )
+
+            noiseDots.forEach { (offset, alpha, radius) ->
                 drawCircle(
-                    color = Color.White.copy(alpha = (0.01f..0.08f).random()),
-                    radius = (0.5f..1.5f).random().dp.toPx(),
+                    color = Color.White.copy(alpha = alpha),
+                    radius = radius.dp.toPx(),
                     center = androidx.compose.ui.geometry.Offset(
-                        x = (0f..size.width).random(),
-                        y = (0f..size.height).random()
+                        x = offset.x * size.width,
+                        y = offset.y * size.height
                     )
                 )
             }
@@ -196,7 +234,7 @@ fun HermesApp(viewModel: HermesViewModel, modifier: Modifier = Modifier) {
     ) {
         when (val state = uiState) {
             is HermesUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            is HermesUiState.NoApiKey -> ApiKeyScreen(onSave = viewModel::saveApiKey)
+            is HermesUiState.NoApiKey -> SetupScreen(onSave = viewModel::saveConfig)
             else -> {
                 val history = when (state) {
                     is HermesUiState.Chatting -> state.history
@@ -223,8 +261,77 @@ fun HermesApp(viewModel: HermesViewModel, modifier: Modifier = Modifier) {
 }
 
 @Composable
+fun SetupScreen(onSave: (String, String) -> Unit) {
+    var key by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf("https://hermes-agent.nousresearch.com/") }
+    
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            "INITIALIZATION REQUIRED", 
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Black,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            "CONFIGURE YOUR HERMES NODE", 
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.tertiary
+        )
+        Spacer(modifier = Modifier.height(32.dp))
+        
+        Text("BASE_URL", style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.Start))
+        TextField(
+            value = url,
+            onValueChange = { url = it },
+            placeholder = { Text("https://your-hermes-server.com/", color = MaterialTheme.colorScheme.outline) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RectangleShape,
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+                unfocusedIndicatorColor = MaterialTheme.colorScheme.outline
+            )
+        )
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Text("API_KEY", style = MaterialTheme.typography.labelSmall, modifier = Modifier.align(Alignment.Start))
+        TextField(
+            value = key,
+            onValueChange = { key = it },
+            placeholder = { Text("Enter your API key", color = MaterialTheme.colorScheme.outline) },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RectangleShape,
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+                unfocusedIndicatorColor = MaterialTheme.colorScheme.outline
+            )
+        )
+        
+        Spacer(modifier = Modifier.height(32.dp))
+        
+        Button(
+            onClick = { onSave(key, url) },
+            shape = RectangleShape,
+            modifier = Modifier.fillMaxWidth().height(56.dp)
+        ) {
+            Text("SAVE & INITIALIZE", fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+
+@Composable
 fun ChatHistory(messages: List<Message>, modifier: Modifier = Modifier) {
     val listState = rememberLazyListState()
+    val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
@@ -243,12 +350,21 @@ fun ChatHistory(messages: List<Message>, modifier: Modifier = Modifier) {
             val alignment = if (isUser) Alignment.End else Alignment.Start
             
             Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
-                Text(
-                    text = if (isUser) "[USER]" else "[HERMES]",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (isUser) "[USER]" else "[HERMES]",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = timeFormat.format(Date(message.timestamp)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .wrapContentWidth()
@@ -272,51 +388,15 @@ fun ChatHistory(messages: List<Message>, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun ApiKeyScreen(onSave: (String) -> Unit) {
-    var key by remember { mutableStateOf("") }
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            "INITIALIZATION REQUIRED", 
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Black
-        )
-        Text(
-            "PROVIDE ACCESS KEY TO CONTINUE", 
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.tertiary
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        TextField(
-            value = key,
-            onValueChange = { key = it },
-            placeholder = { Text("API_KEY_HERE", color = MaterialTheme.colorScheme.outline) },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RectangleShape,
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-                focusedIndicatorColor = MaterialTheme.colorScheme.primary,
-                unfocusedIndicatorColor = MaterialTheme.colorScheme.outline
-            )
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Button(
-            onClick = { onSave(key) },
-            shape = RectangleShape,
-            modifier = Modifier.fillMaxWidth().height(56.dp)
-        ) {
-            Text("AUTHORIZE", fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
 fun SettingsDialog(viewModel: HermesViewModel, onDismiss: () -> Unit) {
-    val currentPeriod = viewModel.getSelfDestructPeriod()
+    val currentPeriod by viewModel.selfDestructPeriod.collectAsState()
+    val isBiometricEnabled by viewModel.isBiometricEnabled.collectAsState()
+    val systemPrompt by viewModel.systemPrompt.collectAsState()
+    val temperature by viewModel.temperature.collectAsState()
+    val maxTokens by viewModel.maxTokens.collectAsState()
+    val selectedModel by viewModel.selectedModel.collectAsState()
+    val availableModels by viewModel.availableModels.collectAsState()
+
     val options = listOf(
         "DISABLED" to 0L,
         "1 HOUR" to 3600_000L,
@@ -332,10 +412,96 @@ fun SettingsDialog(viewModel: HermesViewModel, onDismiss: () -> Unit) {
             Text("SYSTEM CONFIGURATION", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Black) 
         },
         text = {
-            Column {
-                Text("RETENTION POLICY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
-                Spacer(modifier = Modifier.height(8.dp))
-                options.forEach { (label, period) ->
+            LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                item {
+                    Text("SECURITY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    ) {
+                        Checkbox(
+                            checked = isBiometricEnabled,
+                            onCheckedChange = { viewModel.setBiometricEnabled(it) }
+                        )
+                        Text("Enable Biometric Lock", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 8.dp))
+                    }
+                    
+                    Spacer(Modifier.height(16.dp))
+                    Text("PERSONA", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                    TextField(
+                        value = systemPrompt,
+                        onValueChange = { viewModel.setSystemPrompt(it) },
+                        placeholder = { Text("System instructions...", style = MaterialTheme.typography.bodySmall) },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        shape = RectangleShape,
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent
+                        )
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+                    Text("MODEL CONTROL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                    
+                    var expanded by remember { mutableStateOf(false) }
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                        OutlinedButton(
+                            onClick = { expanded = true },
+                            shape = RectangleShape,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(selectedModel.ifEmpty { "Select Model" }, style = MaterialTheme.typography.bodySmall)
+                        }
+                        DropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false },
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                        ) {
+                            availableModels.forEach { model ->
+                                DropdownMenuItem(
+                                    text = { Text(model.id, style = MaterialTheme.typography.bodySmall) },
+                                    onClick = {
+                                        viewModel.setSelectedModel(model.id)
+                                        expanded = false
+                                    }
+                                )
+                            }
+                            if (availableModels.isEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("hermes-agent", style = MaterialTheme.typography.bodySmall) },
+                                    onClick = {
+                                        viewModel.setSelectedModel("hermes-agent")
+                                        expanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    Text("TEMPERATURE: ${String.format(Locale.US, "%.1f", temperature)}", style = MaterialTheme.typography.labelSmall)
+                    Slider(
+                        value = temperature,
+                        onValueChange = { viewModel.setTemperature(it) },
+                        valueRange = 0f..1f,
+                        steps = 10
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+                    Text("MAX TOKENS: $maxTokens", style = MaterialTheme.typography.labelSmall)
+                    Slider(
+                        value = maxTokens.toFloat(),
+                        onValueChange = { viewModel.setMaxTokens(it.toInt()) },
+                        valueRange = 256f..4096f,
+                        steps = 15
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+                    Text("RETENTION POLICY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                items(options) { (label, period) ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier

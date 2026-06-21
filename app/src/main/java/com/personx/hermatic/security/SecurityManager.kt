@@ -25,6 +25,15 @@ class SecurityManager(context: Context) {
         return sharedPreferences.getString("api_key", null)
     }
 
+    fun saveBaseUrl(url: String) {
+        val formattedUrl = if (url.endsWith("/")) url else "$url/"
+        sharedPreferences.edit().putString("base_url", formattedUrl).apply()
+    }
+
+    fun getBaseUrl(): String {
+        return sharedPreferences.getString("base_url", "https://hermes-agent.nousresearch.com/") ?: "https://hermes-agent.nousresearch.com/"
+    }
+
     fun getDatabasePassphrase(): ByteArray {
         val key = sharedPreferences.getString("db_passphrase", null)
         return if (key != null) {
@@ -44,5 +53,45 @@ class SecurityManager(context: Context) {
         // Default to 24 hours (24 * 60 * 60 * 1000)
         // 0 means disabled
         return sharedPreferences.getLong("self_destruct_period", 0L)
+    }
+
+    fun isBiometricEnabled(): Boolean {
+        return sharedPreferences.getBoolean("biometric_enabled", true)
+    }
+
+    fun setBiometricEnabled(enabled: Boolean) {
+        sharedPreferences.edit().putBoolean("biometric_enabled", enabled).apply()
+    }
+
+    fun getSystemPrompt(): String {
+        return sharedPreferences.getString("system_prompt", "You are Hermes, a helpful AI assistant.") ?: "You are Hermes, a helpful AI assistant."
+    }
+
+    fun saveSystemPrompt(prompt: String) {
+        sharedPreferences.edit().putString("system_prompt", prompt).apply()
+    }
+
+    fun getTemperature(): Float {
+        return sharedPreferences.getFloat("temperature", 0.7f)
+    }
+
+    fun saveTemperature(temp: Float) {
+        sharedPreferences.edit().putFloat("temperature", temp).apply()
+    }
+
+    fun getMaxTokens(): Int {
+        return sharedPreferences.getInt("max_tokens", 2048)
+    }
+
+    fun saveMaxTokens(tokens: Int) {
+        sharedPreferences.edit().putInt("max_tokens", tokens).apply()
+    }
+
+    fun getSelectedModel(): String {
+        return sharedPreferences.getString("selected_model", "hermes-agent") ?: "hermes-agent"
+    }
+
+    fun saveSelectedModel(model: String) {
+        sharedPreferences.edit().putString("selected_model", model).apply()
     }
 }

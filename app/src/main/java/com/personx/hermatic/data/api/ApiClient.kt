@@ -18,10 +18,16 @@ class ApiClient(private val securityManager: SecurityManager) {
         })
         .build()
 
-    val hermesApi: HermesApi = Retrofit.Builder()
-        .baseUrl("https://hermes-agent.nousresearch.com/")
-        .client(okHttpClient)
-        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-        .build()
-        .create(HermesApi::class.java)
+    // Using a function to build the API ensures we use the latest URL from SecurityManager
+    fun createHermesApi(): HermesApi {
+        return Retrofit.Builder()
+            .baseUrl(securityManager.getBaseUrl())
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+            .create(HermesApi::class.java)
+    }
+    
+    // For convenience
+    val hermesApi: HermesApi get() = createHermesApi()
 }

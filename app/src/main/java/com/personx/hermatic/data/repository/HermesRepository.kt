@@ -1,5 +1,6 @@
 package com.personx.hermatic.data.repository
 
+import com.personx.hermatic.data.api.ApiClient
 import com.personx.hermatic.data.api.HermesApi
 import com.personx.hermatic.data.db.ChatDao
 import com.personx.hermatic.data.model.ChatRequest
@@ -7,6 +8,7 @@ import com.personx.hermatic.data.model.Message
 import com.personx.hermatic.data.model.toEntity
 import com.personx.hermatic.data.model.toMessage
 import com.personx.hermatic.data.model.ChatChunk
+import com.personx.hermatic.data.model.ModelInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -15,22 +17,48 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 
 class HermesRepository(
-    private val api: HermesApi,
+    private val apiClient: ApiClient,
     private val chatDao: ChatDao,
     private val json: Json,
 ) {
+    private val api: HermesApi get() = apiClient.hermesApi
+
     fun getChatHistory(): Flow<List<Message>> {
         return chatDao.getAllMessages().map { entities ->
             entities.map { it.toMessage() }
         }
     }
 
-    fun chatStream(messages: List<Message>): Flow<String> = flow {
-        // Save user message to DB
-        val lastMessage = messages.last()
-        chatDao.insertMessage(lastMessage.toEntity())
+    suspend fun getModels(): List<ModelInfo> {
+        return try {
+            api.getModels().data
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
 
-        val request = ChatRequest(messages = messages, stream = true)
+    fun chatStream(
+        messages: List<Message>,
+        model: String,
+        temperature: Float,
+        maxTokens: Int,
+        systemPrompt: String
+    ): Flow<String> = flow {
+        // Prepare messages with system prompt
+        val fullMessages = mutableListOf(Message(role = "system", content = systemPrompt))
+        fullMessages.addAll(messages)
+
+        // Save user message to DB (last one in the input list)
+        val userMessage = messages.last()
+        chatDao.insertMessage(userMessage.toEntity())
+
+        val request = ChatRequest(
+            model = model,
+            messages = fullMessages,
+            stream = true,
+            temperature = temperature,
+            max_tokens = maxTokens
+        )
         val responseBody = api.chatCompletionsStream(request)
         
         val fullContent = StringBuilder()
@@ -59,21 +87,6 @@ class HermesRepository(
             chatDao.insertMessage(Message(role = "assistant", content = fullContent.toString()).toEntity())
         }
     }.flowOn(Dispatchers.IO)
-
-    suspend fun chat(messages: List<Message>): String {
-        // Save user message to DB
-        val lastMessage = messages.last()
-        chatDao.insertMessage(lastMessage.toEntity())
-
-        val request = ChatRequest(messages = messages)
-        val response = api.chatCompletions(request)
-        val content = response.choices.firstOrNull()?.message?.content ?: "No response"
-
-        // Save bot message to DB
-        chatDao.insertMessage(Message(role = "assistant", content = content).toEntity())
-
-        return content
-    }
 
     suspend fun clearHistory() {
         chatDao.clearHistory()
