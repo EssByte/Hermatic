@@ -71,7 +71,20 @@ class MainActivity : FragmentActivity() {
     private val isAuthenticated = mutableStateOf(false)
     private val authErrorMessage = mutableStateOf<String?>(null)
 
-    override fun onCreate(savedInstanceState: Bundle?) {
+    override fun onStop() {
+        super.onStop()
+        // Auto-lock when the app goes to background
+        if (securityManager.isBiometricEnabled()) {
+            isAuthenticated.value = false
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!isAuthenticated.value) {
+            performAuthentication()
+        }
+    }
         super.onCreate(savedInstanceState)
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         securityManager = SecurityManager(this)
@@ -562,37 +575,37 @@ fun ChatHistory(messages: List<Message>, modifier: Modifier = Modifier) {
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
                 }
-                Box(
-                    modifier = Modifier
-                        .wrapContentWidth()
-                        .widthIn(max = 300.dp)
-                        .border(
-                            BorderStroke(1.dp, if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
-                            RectangleShape
-                        )
-                        .background(if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
-                        .combinedClickable(
-                            onClick = {},
-                            onLongClick = { showMenu = true }
-                        )
-                        .padding(12.dp)
-                ) {
-                    Markdown(content = message.content)
-                    
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
+                    Box(
+                        modifier = Modifier
+                            .wrapContentWidth()
+                            .widthIn(max = 300.dp)
+                            .border(
+                                BorderStroke(1.dp, if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
+                                RectangleShape
+                            )
+                            .background(if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
+                            .combinedClickable(
+                                onClick = {},
+                                onLongClick = { showMenu = true }
+                            )
+                            .padding(12.dp)
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Copy", style = MaterialTheme.typography.bodySmall) },
-                            leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                            onClick = {
-                                clipboardManager.setText(AnnotatedString(message.content))
-                                showMenu = false
-                            }
-                        )
+                        Markdown(content = message.content)
+                        
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Copy", style = MaterialTheme.typography.bodySmall) },
+                                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(message.content))
+                                    showMenu = false
+                                }
+                            )
+                        }
                     }
-                }
             }
         }
     }

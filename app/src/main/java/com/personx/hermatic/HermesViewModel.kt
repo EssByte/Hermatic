@@ -251,6 +251,14 @@ class HermesViewModel(
         securityManager.setDarkMode(enabled)
         _isDarkMode.value = enabled
     }
+
+    fun wipeSystem(context: android.content.Context) {
+        viewModelScope.launch {
+            securityManager.wipeAllData(context)
+            _uiState.value = HermesUiState.NoApiKey
+            currentHistory = emptyList()
+        }
+    }
 }
 
 sealed class HermesUiState {

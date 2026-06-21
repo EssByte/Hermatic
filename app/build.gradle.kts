@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.personx.hermatic"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.personx.hermatic"

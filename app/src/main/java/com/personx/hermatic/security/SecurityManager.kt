@@ -119,4 +119,9 @@ class SecurityManager(context: Context) {
     fun setDarkMode(enabled: Boolean) {
         sharedPreferences.edit().putBoolean("theme_dark_mode", enabled).apply()
     }
+
+    fun wipeAllData(context: Context) {
+        sharedPreferences.edit().clear().apply()
+        context.deleteDatabase("hermes_database")
+    }
 }
