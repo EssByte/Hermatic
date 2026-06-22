@@ -1,5 +1,6 @@
 package com.personx.hermatic
 
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import android.view.WindowManager
@@ -1333,6 +1334,15 @@ fun ColorPicker(selectedColor: String, onColorSelected: (String) -> Unit) {
     }
 }
 
+fun Context.findActivity(): MainActivity? {
+    var context = this
+    while (context is android.content.ContextWrapper) {
+        if (context is MainActivity) return context
+        context = context.baseContext
+    }
+    return null
+}
+
 @Composable
 fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
     var message by remember { mutableStateOf("") }
@@ -1345,7 +1355,7 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
     var transcription by remember { mutableStateOf("") }
     
     val context = LocalContext.current
-    val activity = context as? MainActivity
+    val activity = remember(context) { context.findActivity() }
     
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -1357,7 +1367,7 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (!isGranted) {
-            // Handle permission denied
+            android.widget.Toast.makeText(context, "Mic permission required", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1409,27 +1419,36 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
                     modifier = Modifier.weight(1f).height(48.dp).padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Mic, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp))
+                    val infiniteTransition = rememberInfiniteTransition(label = "recording")
+                    val alpha by infiniteTransition.animateFloat(
+                        initialValue = 1f,
+                        targetValue = 0.2f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(1000),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "alpha"
+                    )
+                    Icon(Icons.Default.Mic, contentDescription = null, tint = Color.Red.copy(alpha = alpha), modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        if (isLocked) "RECORDING_LOCKED..." else "SWIPE_UP_TO_LOCK", 
+                        if (isLocked) "RECORDING_LOCKED..." else "SLIDE_UP_TO_LOCK", 
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(Modifier.weight(1f))
-                    if (isLocked) {
-                        Text(
-                            "CANCEL", 
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.clickable { 
-                                activity?.audioRecorder?.stop()
-                                activity?.voiceManager?.stopListening()
-                                isRecording = false
-                                isLocked = false
-                            },
-                            color = Color.Red
-                        )
-                    }
+                    Text(
+                        "CANCEL", 
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.clickable { 
+                            activity?.audioRecorder?.stop()
+                            activity?.voiceManager?.stopListening()
+                            isRecording = false
+                            isLocked = false
+                            swipeOffset = 0f
+                        },
+                        color = Color.Red.copy(alpha = 0.7f)
+                    )
                 }
             } else {
                 IconButton(
@@ -1468,9 +1487,9 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
             }
             
             val canSend = message.isNotBlank() || selectedImageUri != null || isLocked
-            
             val isActionable = canSend || isRecording || (message.isBlank() && selectedImageUri == null)
-            
+            val showMic = (message.isBlank() && selectedImageUri == null) || isRecording || isLocked
+
             Box(
                 modifier = Modifier
                     .padding(4.dp)
@@ -1478,46 +1497,45 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
                     .height(48.dp)
                     .offset { IntOffset(0, swipeOffset.roundToInt()) }
                     .background(
-                        if (isActionable) MaterialTheme.colorScheme.primary.copy(alpha = if (canSend || isRecording) 1f else 0.4f)
+                        if (isActionable) MaterialTheme.colorScheme.primary 
                         else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
                         RectangleShape
                     )
-                    .pointerInput(Unit) {
-                        detectDragGestures(
-                            onDragStart = {
-                                if (message.isBlank() && selectedImageUri == null) {
-                                    // Start recording
+                    .pointerInput(message, selectedImageUri) {
+                        if (message.isBlank() && selectedImageUri == null) {
+                            detectDragGestures(
+                                onDragStart = {
                                     permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
                                     val file = File(context.filesDir, "voice_${System.currentTimeMillis()}.mp4")
                                     activity?.audioRecorder?.start(file)
                                     activity?.voiceManager?.startListening { transcription = it }
                                     isRecording = true
                                     isLocked = false
-                                }
-                            },
-                            onDrag = { _, dragAmount ->
-                                if (isRecording && !isLocked) {
-                                    swipeOffset = (swipeOffset + dragAmount.y).coerceIn(-200f, 0f)
-                                    if (swipeOffset <= -150f) {
-                                        isLocked = true
+                                },
+                                onDrag = { _, dragAmount ->
+                                    if (isRecording && !isLocked) {
+                                        swipeOffset = (swipeOffset + dragAmount.y).coerceIn(-200f, 0f)
+                                        if (swipeOffset <= -150f) {
+                                            isLocked = true
+                                            swipeOffset = 0f
+                                        }
+                                    }
+                                },
+                                onDragEnd = {
+                                    if (isRecording && !isLocked) {
+                                        val finalTranscription = activity?.voiceManager?.stopListening() ?: ""
+                                        activity?.audioRecorder?.stop()
+                                        val files = context.filesDir.listFiles { f -> f.name.startsWith("voice_") }
+                                        val latestFile = files?.maxByOrNull { it.lastModified() }
+                                        onSend("", null, latestFile, finalTranscription)
+                                        isRecording = false
                                         swipeOffset = 0f
                                     }
                                 }
-                            },
-                            onDragEnd = {
-                                if (isRecording && !isLocked) {
-                                    val finalTranscription = activity?.voiceManager?.stopListening() ?: ""
-                                    activity?.audioRecorder?.stop()
-                                    val files = context.filesDir.listFiles { f -> f.name.startsWith("voice_") }
-                                    val latestFile = files?.maxByOrNull { it.lastModified() }
-                                    onSend("", null, latestFile, finalTranscription)
-                                    isRecording = false
-                                    swipeOffset = 0f
-                                }
-                            }
-                        )
+                            )
+                        }
                     }
-                    .clickable(enabled = canSend) {
+                    .clickable(enabled = isActionable) {
                         if (isLocked) {
                             val finalTranscription = activity?.voiceManager?.stopListening() ?: ""
                             activity?.audioRecorder?.stop()
@@ -1534,7 +1552,6 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
                     },
                 contentAlignment = Alignment.Center
             ) {
-                val showMic = (message.isBlank() && selectedImageUri == null) || isRecording || isLocked
                 Icon(
                     if (showMic) Icons.Default.Mic else Icons.Default.ArrowUpward, 
                     contentDescription = "Action", 
