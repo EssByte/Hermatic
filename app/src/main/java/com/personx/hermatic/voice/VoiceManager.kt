@@ -17,7 +17,12 @@ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
     private var currentTranscription = StringBuilder()
 
     init {
+        initializeTts()
+    }
+
+    private fun initializeTts() {
         try {
+            Log.d("VoiceManager", "Attempting to initialize TTS...")
             tts = TextToSpeech(context, this)
         } catch (e: Exception) {
             Log.e("VoiceManager", "Failed to init TTS", e)
@@ -26,23 +31,33 @@ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
+            val engines = tts?.engines
+            Log.d("VoiceManager", "Available TTS engines: ${engines?.joinToString { it.name }}")
+            
             val result = tts?.setLanguage(Locale.getDefault())
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                Log.e("VoiceManager", "Language not supported")
+                Log.w("VoiceManager", "System default language not supported, falling back to US English")
                 tts?.setLanguage(Locale.US)
             }
+            
             isTtsReady = true
-            Log.d("VoiceManager", "TTS Initialized")
+            Log.d("VoiceManager", "TTS Initialized and Ready")
         } else {
             Log.e("VoiceManager", "TTS Initialization failed with status: $status")
+            // On some systems (like GrapheneOS), we might need to wait or retry if no engine is active
         }
     }
 
     fun speak(text: String): Boolean {
+        if (tts == null) {
+            initializeTts()
+            return false
+        }
+        
         return if (isTtsReady) {
             Log.d("VoiceManager", "Speaking: $text")
-            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "HERMES_VOICE")
-            true
+            val result = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "HERMES_VOICE")
+            result == TextToSpeech.SUCCESS
         } else {
             Log.w("VoiceManager", "TTS not ready yet")
             false

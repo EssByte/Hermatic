@@ -184,7 +184,8 @@ class MainActivity : FragmentActivity() {
 
     fun speak(text: String) {
         if (!voiceManager.speak(text)) {
-            android.widget.Toast.makeText(this, "Speech engine not ready", android.widget.Toast.LENGTH_SHORT).show()
+            // Try to re-initialize if it failed
+            android.widget.Toast.makeText(this, "TTS engine not ready. Initializing...", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
