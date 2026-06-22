@@ -21,7 +21,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.pointerInput
@@ -1504,53 +1507,70 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
                     )
                     .pointerInput(message, selectedImageUri) {
                         if (message.isBlank() && selectedImageUri == null) {
-                            detectDragGestures(
-                                onDragStart = {
-                                    permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                                    val file = File(context.filesDir, "voice_${System.currentTimeMillis()}.mp4")
-                                    activity?.audioRecorder?.start(file)
-                                    activity?.voiceManager?.startListening { transcription = it }
-                                    isRecording = true
-                                    isLocked = false
-                                },
-                                onDrag = { _, dragAmount ->
-                                    if (isRecording && !isLocked) {
-                                        swipeOffset = (swipeOffset + dragAmount.y).coerceIn(-200f, 0f)
-                                        if (swipeOffset <= -150f) {
-                                            isLocked = true
-                                            swipeOffset = 0f
-                                        }
-                                    }
-                                },
-                                onDragEnd = {
-                                    if (isRecording && !isLocked) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val down = awaitFirstDown()
+                                    if (isLocked) {
+                                        waitForUpOrCancellation()
                                         val finalTranscription = activity?.voiceManager?.stopListening() ?: ""
                                         activity?.audioRecorder?.stop()
                                         val files = context.filesDir.listFiles { f -> f.name.startsWith("voice_") }
                                         val latestFile = files?.maxByOrNull { it.lastModified() }
                                         onSend("", null, latestFile, finalTranscription)
                                         isRecording = false
-                                        swipeOffset = 0f
+                                        isLocked = false
+                                        continue
+                                    }
+                                    
+                                    // Start recording
+                                    permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                                    val file = File(context.filesDir, "voice_${System.currentTimeMillis()}.mp4")
+                                    activity?.audioRecorder?.start(file)
+                                    activity?.voiceManager?.startListening { transcription = it }
+                                    isRecording = true
+                                    isLocked = false
+                                    
+                                    var pointerId = down.id
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.find { it.id == pointerId }
+                                        if (change == null || change.isConsumed) break
+                                        
+                                        if (change.changedToUp()) {
+                                            if (isRecording && !isLocked) {
+                                                val finalTranscription = activity?.voiceManager?.stopListening() ?: ""
+                                                activity?.audioRecorder?.stop()
+                                                val files = context.filesDir.listFiles { f -> f.name.startsWith("voice_") }
+                                                val latestFile = files?.maxByOrNull { it.lastModified() }
+                                                onSend("", null, latestFile, finalTranscription)
+                                                isRecording = false
+                                                swipeOffset = 0f
+                                            }
+                                            break
+                                        } else {
+                                            val dragAmount = change.position.y - change.previousPosition.y
+                                            if (isRecording && !isLocked) {
+                                                swipeOffset = (swipeOffset + dragAmount).coerceIn(-200f, 0f)
+                                                if (swipeOffset <= -150f) {
+                                                    isLocked = true
+                                                    swipeOffset = 0f
+                                                }
+                                            }
+                                        }
                                     }
                                 }
-                            )
+                            }
                         }
                     }
-                    .clickable(enabled = isActionable) {
-                        if (isLocked) {
-                            val finalTranscription = activity?.voiceManager?.stopListening() ?: ""
-                            activity?.audioRecorder?.stop()
-                            val files = context.filesDir.listFiles { f -> f.name.startsWith("voice_") }
-                            val latestFile = files?.maxByOrNull { it.lastModified() }
-                            onSend("", null, latestFile, finalTranscription)
-                            isRecording = false
-                            isLocked = false
-                        } else if (message.isNotBlank() || selectedImageUri != null) {
-                            onSend(message, selectedImageUri, null, null)
-                            message = ""
-                            selectedImageUri = null
-                        }
-                    },
+                    .then(
+                        if (message.isNotBlank() || selectedImageUri != null) {
+                            Modifier.clickable {
+                                onSend(message, selectedImageUri, null, null)
+                                message = ""
+                                selectedImageUri = null
+                            }
+                        } else Modifier
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
