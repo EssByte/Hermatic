@@ -32,6 +32,7 @@ abstract class HermesDatabase : RoomDatabase() {
                     "hermes_database"
                 )
                 .openHelperFactory(factory)
+                .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 INSTANCE = instance
                 instance
