@@ -21,6 +21,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -789,13 +790,36 @@ fun SetupScreen(onSave: (String, String) -> Unit) {
 
 
 @Composable
+fun TechnicalWaveform(color: Color, modifier: Modifier = Modifier, seed: String) {
+    val barCount = 32
+    val heights = remember(seed) {
+        val random = java.util.Random(seed.hashCode().toLong())
+        List(barCount) { 0.2f + random.nextFloat() * 0.8f }
+    }
+
+    Canvas(modifier = modifier.height(24.dp)) {
+        val barWidth = size.width / (barCount * 1.5f)
+        val spaceWidth = barWidth * 0.5f
+        
+        heights.forEachIndexed { index, heightFactor ->
+            val x = index * (barWidth + spaceWidth)
+            val barHeight = size.height * heightFactor
+            val y = (size.height - barHeight) / 2
+            
+            drawRect(
+                color = color,
+                topLeft = androidx.compose.ui.geometry.Offset(x, y),
+                size = androidx.compose.ui.geometry.Size(barWidth, barHeight)
+            )
+        }
+    }
+}
+
+@Composable
 fun AudioMessagePlayer(audioUrl: String, transcription: String?, isUser: Boolean) {
     var isPlaying by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
     
-    // We'll need a way to trigger play from here.
-    // For simplicity, I'll assume we can use a singleton or a CompositionLocal for AudioPlayer.
-    // But since I'm in a FragmentActivity, I might just use the activity's player.
     val context = LocalContext.current
     val activity = context as? MainActivity
     
@@ -816,58 +840,78 @@ fun AudioMessagePlayer(audioUrl: String, transcription: String?, isUser: Boolean
                         isPlaying = true
                     }
                 },
-                modifier = Modifier.size(32.dp).background(
-                    if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) 
-                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                modifier = Modifier.size(36.dp).background(
+                    if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) 
+                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.1f),
                     RectangleShape
-                )
+                ).border(0.5.dp, if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), RectangleShape)
             ) {
                 Icon(
                     if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = null,
                     tint = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
             
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(12.dp))
             
-            // Minimalistic waveform-like placeholder
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(2.dp)
-                    .background(
-                        if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-                        else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                    )
+            TechnicalWaveform(
+                color = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f) 
+                        else MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+                modifier = Modifier.weight(1f),
+                seed = audioUrl
             )
             
+            Spacer(Modifier.width(8.dp))
+            
             if (!transcription.isNullOrBlank()) {
-                IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(24.dp)) {
+                IconButton(
+                    onClick = { expanded = !expanded }, 
+                    modifier = Modifier.size(24.dp)
+                ) {
                     Icon(
                         if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                         contentDescription = "Show Transcription",
-                        tint = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.size(14.dp)
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
         }
         
-        if (expanded && !transcription.isNullOrBlank()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp)
-                    .background(Color.Black.copy(alpha = 0.2f))
-                    .padding(8.dp)
-            ) {
-                Text(
-                    text = transcription,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
-                )
+        if (!transcription.isNullOrBlank()) {
+            AnimatedVisibility(visible = expanded) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                        .background(Color.Black.copy(alpha = 0.3f))
+                        .border(
+                            0.5.dp,
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                            RectangleShape
+                        )
+                        .clickable { expanded = !expanded }
+                        .padding(12.dp)
+                ) {
+                    Column {
+                        Text(
+                            "TRANSCRIPTION_DECODED:",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = transcription.uppercase(),
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                lineHeight = 16.sp,
+                                fontSize = 11.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                        )
+                    }
+                }
             }
         }
     }
@@ -1512,13 +1556,14 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
                                     val down = awaitFirstDown()
                                     if (isLocked) {
                                         waitForUpOrCancellation()
-                                        val finalTranscription = activity?.voiceManager?.stopListening() ?: ""
-                                        activity?.audioRecorder?.stop()
-                                        val files = context.filesDir.listFiles { f -> f.name.startsWith("voice_") }
-                                        val latestFile = files?.maxByOrNull { it.lastModified() }
-                                        onSend("", null, latestFile, finalTranscription)
-                                        isRecording = false
-                                        isLocked = false
+                                        activity?.voiceManager?.stopListening { finalTranscription ->
+                                            activity.audioRecorder.stop()
+                                            val files = context.filesDir.listFiles { f -> f.name.startsWith("voice_") }
+                                            val latestFile = files?.maxByOrNull { it.lastModified() }
+                                            onSend("", null, latestFile, finalTranscription)
+                                            isRecording = false
+                                            isLocked = false
+                                        }
                                         continue
                                     }
                                     
@@ -1538,13 +1583,14 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
                                         
                                         if (change.changedToUp()) {
                                             if (isRecording && !isLocked) {
-                                                val finalTranscription = activity?.voiceManager?.stopListening() ?: ""
-                                                activity?.audioRecorder?.stop()
-                                                val files = context.filesDir.listFiles { f -> f.name.startsWith("voice_") }
-                                                val latestFile = files?.maxByOrNull { it.lastModified() }
-                                                onSend("", null, latestFile, finalTranscription)
-                                                isRecording = false
-                                                swipeOffset = 0f
+                                                activity?.voiceManager?.stopListening { finalTranscription ->
+                                                    activity.audioRecorder.stop()
+                                                    val files = context.filesDir.listFiles { f -> f.name.startsWith("voice_") }
+                                                    val latestFile = files?.maxByOrNull { it.lastModified() }
+                                                    onSend("", null, latestFile, finalTranscription)
+                                                    isRecording = false
+                                                    swipeOffset = 0f
+                                                }
                                             }
                                             break
                                         } else {

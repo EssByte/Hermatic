@@ -3,6 +3,8 @@ package com.personx.hermatic.voice
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -15,6 +17,7 @@ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
     private var speechRecognizer: SpeechRecognizer? = null
     private var isTtsReady = false
     private var currentTranscription = StringBuilder()
+    private var finalResultCallback: ((String) -> Unit)? = null
 
     init {
         initializeTts()
@@ -31,20 +34,9 @@ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            val engines = tts?.engines
-            Log.d("VoiceManager", "Available TTS engines: ${engines?.joinToString { it.name }}")
-            
-            val result = tts?.setLanguage(Locale.getDefault())
-            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                Log.w("VoiceManager", "System default language not supported, falling back to US English")
-                tts?.setLanguage(Locale.US)
-            }
-            
+            tts?.setLanguage(Locale.getDefault())
             isTtsReady = true
-            Log.d("VoiceManager", "TTS Initialized and Ready")
-        } else {
-            Log.e("VoiceManager", "TTS Initialization failed with status: $status")
-            // On some systems (like GrapheneOS), we might need to wait or retry if no engine is active
+            Log.d("VoiceManager", "TTS Initialized")
         }
     }
 
@@ -53,15 +45,10 @@ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
             initializeTts()
             return false
         }
-        
         return if (isTtsReady) {
-            Log.d("VoiceManager", "Speaking: $text")
-            val result = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "HERMES_VOICE")
-            result == TextToSpeech.SUCCESS
-        } else {
-            Log.w("VoiceManager", "TTS not ready yet")
-            false
-        }
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "HERMES_VOICE")
+            true
+        } else false
     }
 
     fun stopSpeaking() {
@@ -70,6 +57,7 @@ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
 
     fun startListening(onPartialResult: (String) -> Unit) {
         currentTranscription.clear()
+        finalResultCallback = null
         if (speechRecognizer == null) {
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context)
         }
@@ -88,19 +76,33 @@ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
             override fun onEndOfSpeech() {}
             override fun onError(error: Int) {
                 Log.e("VoiceManager", "Speech recognition error: $error")
+                val handler = Handler(Looper.getMainLooper())
+                handler.post {
+                    finalResultCallback?.let { 
+                        it.invoke(currentTranscription.toString())
+                        finalResultCallback = null
+                    }
+                }
             }
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                if (!matches.isNullOrEmpty()) {
-                    currentTranscription.clear()
-                    currentTranscription.append(matches[0])
-                    onPartialResult(matches[0])
+                val final = if (!matches.isNullOrEmpty()) matches[0] else currentTranscription.toString()
+                
+                val handler = Handler(Looper.getMainLooper())
+                handler.post {
+                    finalResultCallback?.let {
+                        it.invoke(final)
+                        finalResultCallback = null
+                    }
                 }
             }
             override fun onPartialResults(partialResults: Bundle?) {
                 val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
-                    onPartialResult(matches[0])
+                    val partial = matches[0]
+                    currentTranscription.clear()
+                    currentTranscription.append(partial)
+                    onPartialResult(partial)
                 }
             }
             override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -109,9 +111,17 @@ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
         speechRecognizer?.startListening(intent)
     }
 
-    fun stopListening(): String {
+    fun stopListening(onResult: (String) -> Unit) {
+        finalResultCallback = onResult
         speechRecognizer?.stopListening()
-        return currentTranscription.toString()
+        
+        // Timeout to ensure callback is called
+        Handler(Looper.getMainLooper()).postDelayed({
+            finalResultCallback?.let { 
+                it.invoke(currentTranscription.toString())
+                finalResultCallback = null
+            }
+        }, 1500)
     }
     
     fun release() {
