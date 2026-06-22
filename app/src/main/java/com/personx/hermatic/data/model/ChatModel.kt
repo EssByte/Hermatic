@@ -4,25 +4,18 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.*
 
-@Serializable(with = MessageSerializer::class)
+@Serializable
 data class Message(
     val role: String,
-    val content: String, // Kept as String for DB and simple use, but serialized based on content type
+    val content: String, // Kept as String for DB and simple use
     val tool_calls: List<ToolCall>? = null,
     val tool_call_id: String? = null,
     val name: String? = null,
     @Transient val timestamp: Long = System.currentTimeMillis(),
-    @Transient val imageUrl: String? = null // Local or base64
+    @Transient val imageUrl: String? = null, // Local or base64
+    @Transient val audioUrl: String? = null,
+    @Transient val transcription: String? = null
 )
-
-object MessageSerializer : JsonContentPolymorphicSerializer<Message>(Message::class) {
-    override fun selectDeserializer(element: JsonElement): kotlinx.serialization.DeserializationStrategy<Message> {
-        return Message.serializer()
-    }
-
-    // Custom encoding logic to handle OpenAI multimodal format if needed
-    // For now, we'll keep it simple and just use the standard serializer but handle the content mapping in repository
-}
 
 @Serializable
 data class ToolCall(

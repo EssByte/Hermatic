@@ -10,14 +10,20 @@ data class ChatMessageEntity(
     val role: String,
     val content: String,
     val tool_calls: List<ToolCall>? = null,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val imageUrl: String? = null,
+    val audioUrl: String? = null,
+    val transcription: String? = null
 )
 
 fun ChatMessageEntity.toMessage() = Message(
     role = role, 
     content = content, 
     tool_calls = tool_calls,
-    timestamp = timestamp
+    timestamp = timestamp,
+    imageUrl = imageUrl,
+    audioUrl = audioUrl,
+    transcription = transcription
 )
 
 fun Message.toEntity(sessionId: String) = ChatMessageEntity(
@@ -25,5 +31,8 @@ fun Message.toEntity(sessionId: String) = ChatMessageEntity(
     role = role, 
     content = content, 
     tool_calls = tool_calls,
-    timestamp = timestamp
+    timestamp = timestamp,
+    imageUrl = imageUrl,
+    audioUrl = audioUrl,
+    transcription = transcription
 )

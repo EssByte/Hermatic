@@ -120,6 +120,14 @@ class SecurityManager(context: Context) {
         sharedPreferences.edit().putBoolean("theme_dark_mode", enabled).apply()
     }
 
+    fun isAutoTtsEnabled(): Boolean {
+        return sharedPreferences.getBoolean("auto_tts_enabled", false)
+    }
+
+    fun setAutoTtsEnabled(enabled: Boolean) {
+        sharedPreferences.edit().putBoolean("auto_tts_enabled", enabled).apply()
+    }
+
     fun wipeAllData(context: Context) {
         sharedPreferences.edit().clear().apply()
         context.deleteDatabase("hermes_database")

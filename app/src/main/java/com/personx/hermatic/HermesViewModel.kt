@@ -10,6 +10,7 @@ import com.personx.hermatic.security.SecurityManager
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.UUID
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -47,6 +48,9 @@ class HermesViewModel(
 
     private val _isDarkMode = MutableStateFlow(securityManager.isDarkMode())
     val isDarkMode: StateFlow<Boolean> = _isDarkMode
+
+    private val _isAutoTtsEnabled = MutableStateFlow(securityManager.isAutoTtsEnabled())
+    val isAutoTtsEnabled: StateFlow<Boolean> = _isAutoTtsEnabled
 
     private val _availableModels = MutableStateFlow<List<ModelInfo>>(emptyList())
     val availableModels: StateFlow<List<ModelInfo>> = _availableModels
@@ -193,22 +197,19 @@ class HermesViewModel(
     fun getBaseUrl(): String = securityManager.getBaseUrl()
     fun getApiKey(): String = securityManager.getApiKey() ?: ""
 
-    fun sendMessage(context: Context, text: String, imageUri: Uri? = null) {
+    fun sendMessage(context: Context, text: String, imageUri: Uri? = null, audioFile: File? = null, transcription: String? = null) {
         viewModelScope.launch {
             try {
                 _isHermesTyping.value = true
                 
-                // Convert image to base64 if present
-                val base64Image = imageUri?.let { repository.uriToBase64(context, it) }
                 val userMsg = Message(
                     role = "user", 
-                    content = text,
-                    imageUrl = imageUri?.toString() // We save the URI for local display
+                    content = if (audioFile != null) transcription ?: "[VOICE_MESSAGE]" else text,
+                    imageUrl = imageUri?.toString(),
+                    audioUrl = audioFile?.absolutePath,
+                    transcription = transcription
                 )
                 
-                // For the API, if we had vision we'd use the base64Image
-                // For now, we'll just send the text as the content
-
                 var botResponse = ""
                 repository.chatStream(
                     sessionId = _currentSessionId.value,
@@ -222,6 +223,15 @@ class HermesViewModel(
                     botResponse += chunk
                     streamingBotResponse.value = botResponse
                 }
+                
+                // After streaming finished, if auto-tts is enabled, speak it
+                if (_isAutoTtsEnabled.value && botResponse.isNotEmpty()) {
+                    // We'll handle this in MainActivity by observing something or 
+                    // just calling a speak function if we had access to VoiceManager here.
+                    // Better to expose a flow of "new messages to speak".
+                    _ttsEvent.emit(botResponse)
+                }
+                
                 streamingBotResponse.value = null
             } catch (e: Exception) {
                 _isHermesTyping.value = false
@@ -230,6 +240,9 @@ class HermesViewModel(
             }
         }
     }
+
+    private val _ttsEvent = MutableSharedFlow<String>()
+    val ttsEvent: SharedFlow<String> = _ttsEvent
 
     fun clearHistory() {
         viewModelScope.launch {
@@ -290,6 +303,11 @@ class HermesViewModel(
     fun setDarkMode(enabled: Boolean) {
         securityManager.setDarkMode(enabled)
         _isDarkMode.value = enabled
+    }
+
+    fun setAutoTtsEnabled(enabled: Boolean) {
+        securityManager.setAutoTtsEnabled(enabled)
+        _isAutoTtsEnabled.value = enabled
     }
 
     fun wipeSystem(context: Context) {

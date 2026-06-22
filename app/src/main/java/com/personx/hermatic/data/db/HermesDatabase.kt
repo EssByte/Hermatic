@@ -7,9 +7,9 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.personx.hermatic.data.model.ChatMessageEntity
 import com.personx.hermatic.security.SecurityManager
-import net.sqlcipher.database.SupportFactory
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
-@Database(entities = [ChatMessageEntity::class], version = 1, exportSchema = false)
+@Database(entities = [ChatMessageEntity::class], version = 2, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class HermesDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
@@ -21,10 +21,10 @@ abstract class HermesDatabase : RoomDatabase() {
         fun getDatabase(context: Context, securityManager: SecurityManager): HermesDatabase {
             return INSTANCE ?: synchronized(this) {
                 // Initialize SQLCipher
-                net.sqlcipher.database.SQLiteDatabase.loadLibs(context)
+                System.loadLibrary("sqlcipher")
                 
                 val passphrase = securityManager.getDatabasePassphrase()
-                val factory = SupportFactory(passphrase)
+                val factory = SupportOpenHelperFactory(passphrase)
                 
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
