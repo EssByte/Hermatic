@@ -7,29 +7,50 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.util.Log
 import java.util.Locale
 
 class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
-    private val tts = TextToSpeech(context, this)
+    private var tts: TextToSpeech? = null
     private var speechRecognizer: SpeechRecognizer? = null
     private var isTtsReady = false
     private var currentTranscription = StringBuilder()
 
-    override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            tts.language = Locale.US
-            isTtsReady = true
+    init {
+        try {
+            tts = TextToSpeech(context, this)
+        } catch (e: Exception) {
+            Log.e("VoiceManager", "Failed to init TTS", e)
         }
     }
 
-    fun speak(text: String) {
-        if (isTtsReady) {
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            val result = tts?.setLanguage(Locale.getDefault())
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                Log.e("VoiceManager", "Language not supported")
+                tts?.setLanguage(Locale.US)
+            }
+            isTtsReady = true
+            Log.d("VoiceManager", "TTS Initialized")
+        } else {
+            Log.e("VoiceManager", "TTS Initialization failed with status: $status")
+        }
+    }
+
+    fun speak(text: String): Boolean {
+        return if (isTtsReady) {
+            Log.d("VoiceManager", "Speaking: $text")
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "HERMES_VOICE")
+            true
+        } else {
+            Log.w("VoiceManager", "TTS not ready yet")
+            false
         }
     }
 
     fun stopSpeaking() {
-        tts.stop()
+        tts?.stop()
     }
 
     fun startListening(onPartialResult: (String) -> Unit) {
@@ -50,7 +71,9 @@ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
-            override fun onError(error: Int) {}
+            override fun onError(error: Int) {
+                Log.e("VoiceManager", "Speech recognition error: $error")
+            }
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
@@ -77,7 +100,7 @@ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
     }
     
     fun release() {
-        tts.shutdown()
+        tts?.shutdown()
         speechRecognizer?.destroy()
     }
 }

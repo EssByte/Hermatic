@@ -182,7 +182,9 @@ class MainActivity : FragmentActivity() {
     }
 
     fun speak(text: String) {
-        voiceManager.speak(text)
+        if (!voiceManager.speak(text)) {
+            android.widget.Toast.makeText(this, "Speech engine not ready", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onDestroy() {
@@ -960,11 +962,13 @@ fun ChatHistory(messages: List<Message>, maxBubbleWidth: androidx.compose.ui.uni
                         .background(if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.02f) else Color.Black.copy(alpha = 0.1f))
                         .combinedClickable(
                             onClick = {},
-                            onLongClick = { showMenu = true }
+                            onLongClick = { 
+                                showMenu = true 
+                            }
                         )
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 ) {
-                    Column {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         if (message.imageUrl != null) {
                             AsyncImage(
                                 model = message.imageUrl,
@@ -984,7 +988,7 @@ fun ChatHistory(messages: List<Message>, maxBubbleWidth: androidx.compose.ui.uni
                             val content = remember(message.content) { message.content }
                             Markdown(
                                 content = content,
-                                modifier = Modifier
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }
@@ -1465,6 +1469,8 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
             
             val canSend = message.isNotBlank() || selectedImageUri != null || isLocked
             
+            val isActionable = canSend || isRecording || (message.isBlank() && selectedImageUri == null)
+            
             Box(
                 modifier = Modifier
                     .padding(4.dp)
@@ -1472,7 +1478,7 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
                     .height(48.dp)
                     .offset { IntOffset(0, swipeOffset.roundToInt()) }
                     .background(
-                        if (canSend) MaterialTheme.colorScheme.primary 
+                        if (isActionable) MaterialTheme.colorScheme.primary.copy(alpha = if (canSend || isRecording) 1f else 0.4f)
                         else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
                         RectangleShape
                     )
@@ -1489,7 +1495,7 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
                                     isLocked = false
                                 }
                             },
-                            onDrag = { change, dragAmount ->
+                            onDrag = { _, dragAmount ->
                                 if (isRecording && !isLocked) {
                                     swipeOffset = (swipeOffset + dragAmount.y).coerceIn(-200f, 0f)
                                     if (swipeOffset <= -150f) {
@@ -1515,7 +1521,6 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
                         if (isLocked) {
                             val finalTranscription = activity?.voiceManager?.stopListening() ?: ""
                             activity?.audioRecorder?.stop()
-                            // Get the latest file...
                             val files = context.filesDir.listFiles { f -> f.name.startsWith("voice_") }
                             val latestFile = files?.maxByOrNull { it.lastModified() }
                             onSend("", null, latestFile, finalTranscription)
@@ -1529,10 +1534,11 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
                     },
                 contentAlignment = Alignment.Center
             ) {
+                val showMic = (message.isBlank() && selectedImageUri == null) || isRecording || isLocked
                 Icon(
-                    if (isRecording || isLocked) Icons.Default.Mic else Icons.Default.ArrowUpward, 
+                    if (showMic) Icons.Default.Mic else Icons.Default.ArrowUpward, 
                     contentDescription = "Action", 
-                    tint = if (canSend) MaterialTheme.colorScheme.onPrimary 
+                    tint = if (isActionable) MaterialTheme.colorScheme.onPrimary
                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
                     modifier = Modifier.size(20.dp)
                 )
