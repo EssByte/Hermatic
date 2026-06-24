@@ -7,9 +7,11 @@ import androidx.lifecycle.viewModelScope
 import com.personx.hermatic.data.model.*
 import com.personx.hermatic.data.repository.HermesRepository
 import com.personx.hermatic.security.SecurityManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
@@ -102,20 +104,27 @@ class HermesViewModel(
     }
 
     private suspend fun fetchModels() {
-        val models = repository.getModels()
-        _availableModels.value = models
+        withContext(Dispatchers.IO) {
+            val models = repository.getModels()
+            _availableModels.value = models
+        }
     }
 
     private suspend fun fetchSkills() {
-        _skills.value = repository.getSkills()
-        _toolsets.value = repository.getToolsets()
+        withContext(Dispatchers.IO) {
+            _skills.value = repository.getSkills()
+            _toolsets.value = repository.getToolsets()
+        }
     }
 
     private fun fetchDiagnostics() {
         viewModelScope.launch {
-            val diag = mutableMapOf<String, String>()
-            diag["Capabilities"] = repository.getCapabilities()
-            diag["Jobs"] = repository.getJobs()
+            val diag = withContext(Dispatchers.IO) {
+                val d = mutableMapOf<String, String>()
+                d["Capabilities"] = repository.getCapabilities()
+                d["Jobs"] = repository.getJobs()
+                d
+            }
             _rawDiagnostics.value = diag
         }
     }
@@ -183,14 +192,16 @@ class HermesViewModel(
         viewModelScope.launch {
             _connectionStatus.value = ConnectionStatus.Testing
             val url = securityManager.getBaseUrl()
-            repository.checkHealth()
-                .onSuccess {
-                    _connectionStatus.value = ConnectionStatus.Success
-                }
-                .onFailure { error ->
-                    val detailedError = "[URL: $url] ${error.localizedMessage ?: "Unknown error"}"
-                    _connectionStatus.value = ConnectionStatus.Error(detailedError)
-                }
+            val result = withContext(Dispatchers.IO) {
+                repository.checkHealth()
+            }
+            result.onSuccess {
+                _connectionStatus.value = ConnectionStatus.Success
+            }
+            result.onFailure { error ->
+                val detailedError = "[URL: $url] ${error.localizedMessage ?: "Unknown error"}"
+                _connectionStatus.value = ConnectionStatus.Error(detailedError)
+            }
         }
     }
 

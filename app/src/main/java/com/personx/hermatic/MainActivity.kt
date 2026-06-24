@@ -21,10 +21,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
-import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.pointerInput
@@ -409,8 +405,8 @@ fun ChatScreen(viewModel: HermesViewModel) {
         
         if (uiState !is HermesUiState.NoApiKey) {
             val context = LocalContext.current
-            ChatInput(onSend = { text, uri, file, transcription -> 
-                viewModel.sendMessage(context, text, uri, file, transcription) 
+            ChatInput(onSend = { text, uri -> 
+                viewModel.sendMessage(context, text, uri) 
             })
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -793,35 +789,8 @@ fun SetupScreen(onSave: (String, String) -> Unit) {
 
 
 @Composable
-fun TechnicalWaveform(color: Color, modifier: Modifier = Modifier, seed: String) {
-    val barCount = 32
-    val heights = remember(seed) {
-        val random = java.util.Random(seed.hashCode().toLong())
-        List(barCount) { 0.2f + random.nextFloat() * 0.8f }
-    }
-
-    Canvas(modifier = modifier.height(24.dp)) {
-        val barWidth = size.width / (barCount * 1.5f)
-        val spaceWidth = barWidth * 0.5f
-        
-        heights.forEachIndexed { index, heightFactor ->
-            val x = index * (barWidth + spaceWidth)
-            val barHeight = size.height * heightFactor
-            val y = (size.height - barHeight) / 2
-            
-            drawRect(
-                color = color,
-                topLeft = androidx.compose.ui.geometry.Offset(x, y),
-                size = androidx.compose.ui.geometry.Size(barWidth, barHeight)
-            )
-        }
-    }
-}
-
-@Composable
 fun AudioMessagePlayer(audioUrl: String, transcription: String?, isUser: Boolean) {
     var isPlaying by remember { mutableStateOf(false) }
-    var expanded by remember { mutableStateOf(true) }
     
     val context = LocalContext.current
     val activity = context as? MainActivity
@@ -859,11 +828,10 @@ fun AudioMessagePlayer(audioUrl: String, transcription: String?, isUser: Boolean
             
             Spacer(Modifier.width(12.dp))
             
-            TechnicalWaveform(
-                color = if (isUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f) 
-                        else MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
-                modifier = Modifier.weight(1f),
-                seed = audioUrl
+            Text(
+                "AUDIO_SEQUENCE", 
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
             )
         }
         
@@ -1524,18 +1492,9 @@ fun Context.findActivity(): MainActivity? {
 }
 
 @Composable
-fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
+fun ChatInput(onSend: (String, Uri?) -> Unit) {
     var message by remember { mutableStateOf("") }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
-    
-    // Voice Recording States
-    var isRecording by remember { mutableStateOf(false) }
-    var isLocked by remember { mutableStateOf(false) }
-    var swipeOffset by remember { mutableFloatStateOf(0f) }
-    var transcription by remember { mutableStateOf("") }
-    
-    val context = LocalContext.current
-    val activity = remember(context) { context.findActivity() }
     
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -1543,17 +1502,6 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
         selectedImageUri = uri
     }
     
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            // Permission granted, recording will work on next interaction 
-            // or we could trigger it here if we stored the state.
-        } else {
-            android.widget.Toast.makeText(context, "Mic permission required", android.widget.Toast.LENGTH_SHORT).show()
-        }
-    }
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1597,180 +1545,63 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
                 .background(Color.Black.copy(alpha = 0.2f))
                 .padding(4.dp)
         ) {
-            if (isRecording) {
-                Row(
-                    modifier = Modifier.weight(1f).height(48.dp).padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val infiniteTransition = rememberInfiniteTransition(label = "recording")
-                    val alpha by infiniteTransition.animateFloat(
-                        initialValue = 1f,
-                        targetValue = 0.2f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(1000),
-                            repeatMode = RepeatMode.Reverse
-                        ),
-                        label = "alpha"
-                    )
-                    Icon(Icons.Default.Mic, contentDescription = null, tint = Color.Red.copy(alpha = alpha), modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (transcription.isNotBlank()) transcription.uppercase()
-                        else if (isLocked) "RECORDING_LOCKED..." 
-                        else "SLIDE_UP_TO_LOCK", 
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "CANCEL", 
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.clickable { 
-                            activity?.audioRecorder?.stop()
-                            activity?.voiceManager?.stopListening {}
-                            isRecording = false
-                            isLocked = false
-                            swipeOffset = 0f
-                            transcription = ""
-                        },
-                        color = Color.Red.copy(alpha = 0.7f)
-                    )
-                }
-            } else {
-                IconButton(
-                    onClick = { imagePicker.launch("image/*") },
-                    modifier = Modifier.padding(bottom = 4.dp)
-                ) {
-                    Icon(
-                        Icons.Default.AddPhotoAlternate, 
-                        contentDescription = "Send Image", 
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                    )
-                }
-                
-                TextField(
-                    value = message,
-                    onValueChange = { message = it },
-                    placeholder = { 
-                        Text(
-                            "INPUT_HERMES_COMMAND...", 
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
-                            style = MaterialTheme.typography.labelSmall
-                        ) 
-                    },
-                    modifier = Modifier.weight(1f),
-                    shape = RectangleShape,
-                    maxLines = 5,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onBackground),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        cursorColor = MaterialTheme.colorScheme.primary
-                    )
+            IconButton(
+                onClick = { imagePicker.launch("image/*") },
+                modifier = Modifier.padding(bottom = 4.dp)
+            ) {
+                Icon(
+                    Icons.Default.AddPhotoAlternate, 
+                    contentDescription = "Send Image", 
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
                 )
             }
             
-            val canSend = message.isNotBlank() || selectedImageUri != null || isLocked
-            val isActionable = canSend || isRecording || (message.isBlank() && selectedImageUri == null)
-            val showMic = (message.isBlank() && selectedImageUri == null) || isRecording || isLocked
+            TextField(
+                value = message,
+                onValueChange = { message = it },
+                placeholder = { 
+                    Text(
+                        "INPUT_HERMES_COMMAND...", 
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.labelSmall
+                    ) 
+                },
+                modifier = Modifier.weight(1f),
+                shape = RectangleShape,
+                maxLines = 5,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onBackground),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    cursorColor = MaterialTheme.colorScheme.primary
+                )
+            )
+            
+            val canSend = message.isNotBlank() || selectedImageUri != null
 
-            Box(
+            IconButton(
+                onClick = {
+                    if (canSend) {
+                        onSend(message, selectedImageUri)
+                        message = ""
+                        selectedImageUri = null
+                    }
+                },
                 modifier = Modifier
                     .padding(4.dp)
-                    .width(60.dp)
-                    .height(48.dp)
-                    .offset { IntOffset(0, swipeOffset.roundToInt()) }
+                    .size(48.dp)
                     .background(
-                        if (isActionable) MaterialTheme.colorScheme.primary 
+                        if (canSend) MaterialTheme.colorScheme.primary 
                         else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
                         RectangleShape
                     )
-                    .pointerInput(message, selectedImageUri) {
-                        if (message.isBlank() && selectedImageUri == null) {
-                            awaitPointerEventScope {
-                                while (true) {
-                                    val down = awaitFirstDown()
-                                    if (isLocked) {
-                                        waitForUpOrCancellation()
-                                        activity?.voiceManager?.stopListening { finalTranscription ->
-                                            activity.audioRecorder.stop()
-                                            val files = context.filesDir.listFiles { f -> f.name.startsWith("voice_") }
-                                            val latestFile = files?.maxByOrNull { it.lastModified() }
-                                            onSend("", null, latestFile, finalTranscription)
-                                            isRecording = false
-                                            isLocked = false
-                                            transcription = ""
-                                        }
-                                        continue
-                                    }
-                                    
-                                    // Start recording - check permission first
-                                    if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                        val file = File(context.filesDir, "voice_${System.currentTimeMillis()}.mp4")
-                                        activity?.audioRecorder?.start(file)
-                                        transcription = ""
-                                        activity?.voiceManager?.startListening { transcription = it }
-                                        isRecording = true
-                                        isLocked = false
-                                    } else {
-                                        permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                                        return@awaitPointerEventScope
-                                    }
-                                    
-                                    val pointerId = down.id
-                                    while (true) {
-                                        val event = awaitPointerEvent()
-                                        val change = event.changes.find { it.id == pointerId }
-                                        if (change == null || change.isConsumed) break
-                                        
-                                        if (change.changedToUp()) {
-                                            if (isRecording && !isLocked) {
-                                                activity?.voiceManager?.stopListening { finalTranscription ->
-                                                    activity.audioRecorder.stop()
-                                                    val files = context.filesDir.listFiles { f -> f.name.startsWith("voice_") }
-                                                    val latestFile = files?.maxByOrNull { it.lastModified() }
-                                                    onSend("", null, latestFile, finalTranscription)
-                                                    isRecording = false
-                                                    swipeOffset = 0f
-                                                    transcription = ""
-                                                }
-                                            }
-                                            break
-                                        } else {
-                                            val dragAmount = change.position.y - change.previousPosition.y
-                                            if (isRecording && !isLocked) {
-                                                swipeOffset = (swipeOffset + dragAmount).coerceIn(-200f, 0f)
-                                                if (swipeOffset <= -150f) {
-                                                    isLocked = true
-                                                    swipeOffset = 0f
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .then(
-                        if (message.isNotBlank() || selectedImageUri != null) {
-                            Modifier.clickable {
-                                onSend(message, selectedImageUri, null, null)
-                                message = ""
-                                selectedImageUri = null
-                            }
-                        } else Modifier
-                    ),
-                contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    if (showMic) Icons.Default.Mic else Icons.Default.ArrowUpward, 
-                    contentDescription = "Action", 
-                    tint = if (isActionable) MaterialTheme.colorScheme.onPrimary
+                    Icons.Default.ArrowUpward, 
+                    contentDescription = "Send", 
+                    tint = if (canSend) MaterialTheme.colorScheme.onPrimary
                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
                     modifier = Modifier.size(20.dp)
                 )
