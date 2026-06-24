@@ -115,13 +115,14 @@ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
         finalResultCallback = onResult
         speechRecognizer?.stopListening()
         
-        // Timeout to ensure callback is called
+        // Timeout to ensure callback is called if onResults doesn't fire
         Handler(Looper.getMainLooper()).postDelayed({
             finalResultCallback?.let { 
+                Log.d("VoiceManager", "stopListening: Timeout reached, using partial: ${currentTranscription}")
                 it.invoke(currentTranscription.toString())
                 finalResultCallback = null
             }
-        }, 1500)
+        }, 3000)
     }
     
     fun release() {

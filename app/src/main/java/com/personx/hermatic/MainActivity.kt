@@ -23,7 +23,6 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.foundation.layout.Box
@@ -51,7 +50,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -109,6 +107,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -116,6 +115,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -126,6 +126,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
@@ -149,6 +150,7 @@ import java.util.Locale
 
 sealed class Screen(val route: String, val icon: ImageVector) {
     data object Chat : Screen("chat", Icons.AutoMirrored.Filled.Chat)
+    data object Voice : Screen("voice", Icons.Default.Mic)
     data object Skills : Screen("skills", Icons.Default.Build)
     data object Settings : Screen("settings", Icons.Default.Settings)
 }
@@ -264,7 +266,7 @@ class MainActivity : FragmentActivity() {
                                     containerColor = Color.Transparent,
                                     modifier = Modifier.height(56.dp)
                                 ) {
-                                    val items = listOf(Screen.Chat, Screen.Skills, Screen.Settings)
+                                    val items = listOf(Screen.Chat, Screen.Voice, Screen.Skills, Screen.Settings)
                                     items.forEach { screen ->
                                         NavigationBarItem(
                                             selected = currentScreen == screen,
@@ -284,6 +286,7 @@ class MainActivity : FragmentActivity() {
                             Box(Modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding())) {
                                 when (currentScreen) {
                                     is Screen.Chat -> ChatScreen(viewModel)
+                                    is Screen.Voice -> VoiceModeScreen(viewModel)
                                     is Screen.Skills -> SkillsScreen(viewModel)
                                     is Screen.Settings -> SettingsScreen(viewModel, onBack = { currentScreen = Screen.Chat })
                                 }
@@ -818,7 +821,7 @@ fun TechnicalWaveform(color: Color, modifier: Modifier = Modifier, seed: String)
 @Composable
 fun AudioMessagePlayer(audioUrl: String, transcription: String?, isUser: Boolean) {
     var isPlaying by remember { mutableStateOf(false) }
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(true) }
     
     val context = LocalContext.current
     val activity = context as? MainActivity
@@ -862,55 +865,36 @@ fun AudioMessagePlayer(audioUrl: String, transcription: String?, isUser: Boolean
                 modifier = Modifier.weight(1f),
                 seed = audioUrl
             )
-            
-            Spacer(Modifier.width(8.dp))
-            
-            if (!transcription.isNullOrBlank()) {
-                IconButton(
-                    onClick = { expanded = !expanded }, 
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = "Show Transcription",
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
         }
         
         if (!transcription.isNullOrBlank()) {
-            AnimatedVisibility(visible = expanded) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                        .background(Color.Black.copy(alpha = 0.3f))
-                        .border(
-                            0.5.dp,
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                            RectangleShape
-                        )
-                        .clickable { expanded = !expanded }
-                        .padding(12.dp)
-                ) {
-                    Column {
-                        Text(
-                            "TRANSCRIPTION_DECODED:",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = transcription.uppercase(),
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                lineHeight = 16.sp,
-                                fontSize = 11.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
-                        )
-                    }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .background(Color.Black.copy(alpha = 0.3f))
+                    .border(
+                        0.5.dp,
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        RectangleShape
+                    )
+                    .padding(12.dp)
+            ) {
+                Column {
+                    Text(
+                        "TRANSCRIPTION_DECODED:",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = transcription.uppercase(),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            lineHeight = 16.sp,
+                            fontSize = 11.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                    )
                 }
             }
         }
@@ -1072,6 +1056,154 @@ fun ChatHistory(messages: List<Message>, maxBubbleWidth: androidx.compose.ui.uni
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun VoiceModeScreen(viewModel: HermesViewModel) {
+    val uiState by viewModel.uiState.collectAsState()
+    val isTyping by viewModel.isHermesTyping.collectAsState()
+    var isListening by remember { mutableStateOf(false) }
+    var transcription by remember { mutableStateOf("") }
+    
+    val history = (uiState as? HermesUiState.Chatting)?.history ?: emptyList()
+    val lastUserMsg = history.lastOrNull { it.role == "user" }?.content ?: ""
+    val lastAgentMsg = history.lastOrNull { it.role == "assistant" }?.content ?: ""
+
+    val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
+    
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(bottom = 80.dp), // Space for nav bar and bottom spacing
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(horizontal = 40.dp)
+        ) {
+            // 1. User Input (Above the button)
+            val displayInput = if (isListening) transcription else lastUserMsg
+            Text(
+                text = displayInput.uppercase(),
+                style = MaterialTheme.typography.headlineSmall.copy(
+                    fontWeight = FontWeight.Light,
+                    letterSpacing = 2.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                ),
+                color = if (isListening) MaterialTheme.colorScheme.primary 
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.alpha(if (displayInput.isEmpty()) 0f else 1f)
+            )
+
+            Spacer(Modifier.height(48.dp))
+
+            // 2. The Voice Button (Center piece)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(140.dp)
+            ) {
+                if (isListening) {
+                    repeat(2) { index ->
+                        val alpha by infiniteTransition.animateFloat(
+                            initialValue = 0.4f,
+                            targetValue = 0f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(1500, delayMillis = index * 400),
+                                repeatMode = RepeatMode.Restart
+                            ),
+                            label = "ring_alpha"
+                        )
+                        val scale by infiniteTransition.animateFloat(
+                            initialValue = 1f,
+                            targetValue = 2.2f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(1500, delayMillis = index * 400),
+                                repeatMode = RepeatMode.Restart
+                            ),
+                            label = "ring_scale"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(70.dp)
+                                .alpha(alpha)
+                                .scale(scale)
+                                .border(1.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(84.dp)
+                        .scale(if (isListening) pulseScale else 1f)
+                        .background(
+                            if (isListening) MaterialTheme.colorScheme.primary 
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
+                            CircleShape
+                        )
+                        .clickable {
+                            if (!isListening) {
+                                activity?.voiceManager?.startListening { transcription = it }
+                                isListening = true
+                            } else {
+                                activity?.voiceManager?.stopListening { final ->
+                                    if (final.isNotBlank()) {
+                                        viewModel.sendMessage(context, final)
+                                    }
+                                    isListening = false
+                                    transcription = ""
+                                }
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (isListening) Icons.Default.Stop else Icons.Default.Mic,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp),
+                        tint = if (isListening) MaterialTheme.colorScheme.onPrimary 
+                               else MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(48.dp))
+
+            // 3. Agent Response (Below the button)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (isTyping) {
+                    TypingIndicator()
+                } else {
+                    Text(
+                        text = lastAgentMsg.uppercase(),
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = FontWeight.Medium,
+                            lineHeight = 26.sp,
+                            letterSpacing = 1.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        ),
+                        color = MaterialTheme.colorScheme.tertiary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.alpha(if (lastAgentMsg.isEmpty()) 0f else 1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun SettingsScreen(viewModel: HermesViewModel, onBack: () -> Unit) {
     val currentPeriod by viewModel.selfDestructPeriod.collectAsState()
@@ -1399,7 +1531,7 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
     // Voice Recording States
     var isRecording by remember { mutableStateOf(false) }
     var isLocked by remember { mutableStateOf(false) }
-    var swipeOffset by remember { mutableStateOf(0f) }
+    var swipeOffset by remember { mutableFloatStateOf(0f) }
     var transcription by remember { mutableStateOf("") }
     
     val context = LocalContext.current
@@ -1414,7 +1546,10 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        if (!isGranted) {
+        if (isGranted) {
+            // Permission granted, recording will work on next interaction 
+            // or we could trigger it here if we stored the state.
+        } else {
             android.widget.Toast.makeText(context, "Mic permission required", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
@@ -1480,20 +1615,26 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
                     Icon(Icons.Default.Mic, contentDescription = null, tint = Color.Red.copy(alpha = alpha), modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        if (isLocked) "RECORDING_LOCKED..." else "SLIDE_UP_TO_LOCK", 
+                        if (transcription.isNotBlank()) transcription.uppercase()
+                        else if (isLocked) "RECORDING_LOCKED..." 
+                        else "SLIDE_UP_TO_LOCK", 
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
-                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.width(8.dp))
                     Text(
                         "CANCEL", 
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.clickable { 
                             activity?.audioRecorder?.stop()
-                            activity?.voiceManager?.stopListening()
+                            activity?.voiceManager?.stopListening {}
                             isRecording = false
                             isLocked = false
                             swipeOffset = 0f
+                            transcription = ""
                         },
                         color = Color.Red.copy(alpha = 0.7f)
                     )
@@ -1563,19 +1704,25 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
                                             onSend("", null, latestFile, finalTranscription)
                                             isRecording = false
                                             isLocked = false
+                                            transcription = ""
                                         }
                                         continue
                                     }
                                     
-                                    // Start recording
-                                    permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                                    val file = File(context.filesDir, "voice_${System.currentTimeMillis()}.mp4")
-                                    activity?.audioRecorder?.start(file)
-                                    activity?.voiceManager?.startListening { transcription = it }
-                                    isRecording = true
-                                    isLocked = false
+                                    // Start recording - check permission first
+                                    if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                        val file = File(context.filesDir, "voice_${System.currentTimeMillis()}.mp4")
+                                        activity?.audioRecorder?.start(file)
+                                        transcription = ""
+                                        activity?.voiceManager?.startListening { transcription = it }
+                                        isRecording = true
+                                        isLocked = false
+                                    } else {
+                                        permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                                        return@awaitPointerEventScope
+                                    }
                                     
-                                    var pointerId = down.id
+                                    val pointerId = down.id
                                     while (true) {
                                         val event = awaitPointerEvent()
                                         val change = event.changes.find { it.id == pointerId }
@@ -1590,6 +1737,7 @@ fun ChatInput(onSend: (String, Uri?, File?, String?) -> Unit) {
                                                     onSend("", null, latestFile, finalTranscription)
                                                     isRecording = false
                                                     swipeOffset = 0f
+                                                    transcription = ""
                                                 }
                                             }
                                             break
