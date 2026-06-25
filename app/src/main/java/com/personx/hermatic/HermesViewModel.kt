@@ -11,6 +11,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
@@ -72,6 +74,11 @@ class HermesViewModel(
     private val _isHermesTyping = MutableStateFlow(false)
     val isHermesTyping: StateFlow<Boolean> = _isHermesTyping
 
+    private var currentSendJob: Job? = null
+
+    private val _healthDetailed = MutableStateFlow<HealthDetailed?>(null)
+    val healthDetailed: StateFlow<HealthDetailed?> = _healthDetailed
+
     private val _sessions = MutableStateFlow<List<String>>(listOf("default"))
     val sessions: StateFlow<List<String>> = _sessions
 
@@ -117,7 +124,7 @@ class HermesViewModel(
         }
     }
 
-    private fun fetchDiagnostics() {
+    fun fetchDiagnostics() {
         viewModelScope.launch {
             val diag = withContext(Dispatchers.IO) {
                 val d = mutableMapOf<String, String>()
@@ -197,6 +204,10 @@ class HermesViewModel(
             }
             result.onSuccess {
                 _connectionStatus.value = ConnectionStatus.Success
+                val detailed = withContext(Dispatchers.IO) {
+                    repository.checkHealthDetailed()
+                }
+                detailed.onSuccess { _healthDetailed.value = it }
             }
             result.onFailure { error ->
                 val detailedError = "[URL: $url] ${error.localizedMessage ?: "Unknown error"}"
@@ -209,47 +220,108 @@ class HermesViewModel(
     fun getApiKey(): String = securityManager.getApiKey() ?: ""
 
     fun sendMessage(context: Context, text: String, imageUri: Uri? = null, audioFile: File? = null, transcription: String? = null) {
-        viewModelScope.launch {
+        currentSendJob?.cancel()
+        val inputText = if (audioFile != null) transcription ?: "[VOICE_MESSAGE]" else text
+        currentSendJob = viewModelScope.launch {
             try {
                 _isHermesTyping.value = true
-                
+
                 val userMsg = Message(
-                    role = "user", 
-                    content = if (audioFile != null) transcription ?: "[VOICE_MESSAGE]" else text,
+                    role = "user",
+                    content = inputText,
                     imageUrl = imageUri?.toString(),
                     audioUrl = audioFile?.absolutePath,
                     transcription = transcription
                 )
-                
-                var botResponse = ""
-                repository.chatStream(
-                    sessionId = _currentSessionId.value,
-                    messages = currentHistory + userMsg,
-                    model = _selectedModel.value,
-                    temperature = _temperature.value,
-                    maxTokens = _maxTokens.value,
-                    systemPrompt = _systemPrompt.value
-                ).collect { chunk ->
-                    _isHermesTyping.value = false
-                    botResponse += chunk
-                    streamingBotResponse.value = botResponse
+
+                var botContent = StringBuilder()
+                val toolCalls = mutableListOf<DisplayToolCall>()
+                val toolResults = mutableMapOf<String, String>()
+
+                try {
+                    repository.sessionChatStream(
+                        sessionId = _currentSessionId.value,
+                        input = inputText,
+                        instructions = _systemPrompt.value.ifBlank { null }
+                    ).collect { event ->
+                        if (botContent.isEmpty() && toolCalls.isEmpty()) {
+                            repository.insertMessage(userMsg.toEntity(_currentSessionId.value))
+                        }
+                        _isHermesTyping.value = false
+                        when (event) {
+                            is ChatStreamEvent.TextDelta -> {
+                                botContent.append(event.content)
+                                streamingBotResponse.value = botContent.toString()
+                            }
+                            is ChatStreamEvent.ToolStarted -> {
+                                toolCalls.add(DisplayToolCall(
+                                    callId = event.callId,
+                                    name = event.name,
+                                    arguments = event.arguments,
+                                    status = ToolCallStatus.Running
+                                ))
+                            }
+                            is ChatStreamEvent.ToolCompleted -> {
+                                toolResults[event.callId] = event.output
+                                val idx = toolCalls.indexOfFirst { it.callId == event.callId }
+                                if (idx >= 0) {
+                                    toolCalls[idx] = toolCalls[idx].copy(
+                                        result = event.output,
+                                        status = ToolCallStatus.Completed
+                                    )
+                                }
+                            }
+                            is ChatStreamEvent.RunCompleted -> { }
+                        }
+                    }
+                } catch (_: Exception) {
+                    repository.chatStream(
+                        sessionId = _currentSessionId.value,
+                        messages = currentHistory + userMsg,
+                        model = _selectedModel.value,
+                        temperature = _temperature.value,
+                        maxTokens = _maxTokens.value,
+                        systemPrompt = _systemPrompt.value
+                    ).collect { chunk ->
+                        _isHermesTyping.value = false
+                        botContent.append(chunk)
+                        streamingBotResponse.value = botContent.toString()
+                    }
                 }
-                
-                // After streaming finished, if auto-tts is enabled, speak it
-                if (_isAutoTtsEnabled.value && botResponse.isNotEmpty()) {
-                    // We'll handle this in MainActivity by observing something or 
-                    // just calling a speak function if we had access to VoiceManager here.
-                    // Better to expose a flow of "new messages to speak".
-                    _ttsEvent.emit(botResponse)
+
+                val finalContent = botContent.toString()
+                if (finalContent.isNotEmpty() || toolCalls.isNotEmpty()) {
+                    val assistantMsg = Message(
+                        role = "assistant",
+                        content = finalContent,
+                        toolResults = toolResults.ifEmpty { null },
+                        timestamp = System.currentTimeMillis()
+                    )
+                    repository.insertMessage(assistantMsg.toEntity(_currentSessionId.value))
                 }
-                
+
+                if (_isAutoTtsEnabled.value && finalContent.isNotEmpty()) {
+                    _ttsEvent.emit(finalContent)
+                }
+
+                streamingBotResponse.value = null
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                _isHermesTyping.value = false
                 streamingBotResponse.value = null
             } catch (e: Exception) {
                 _isHermesTyping.value = false
                 streamingBotResponse.value = null
                 _uiState.value = HermesUiState.Error(e.message ?: "Unknown error", currentHistory)
+            } finally {
+                currentSendJob = null
             }
         }
+    }
+    
+    fun cancelSending() {
+        currentSendJob?.cancel()
+        _isHermesTyping.value = false
+        streamingBotResponse.value = null
     }
 
     private val _ttsEvent = MutableSharedFlow<String>()
@@ -319,6 +391,32 @@ class HermesViewModel(
     fun setAutoTtsEnabled(enabled: Boolean) {
         securityManager.setAutoTtsEnabled(enabled)
         _isAutoTtsEnabled.value = enabled
+    }
+
+    fun createJob(prompt: String, schedule: String = "*/30 * * * *") {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                repository.createJob(prompt, schedule)
+            }
+            result.onSuccess { fetchDiagnostics() }
+        }
+    }
+
+    fun deleteJob(jobId: String) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                repository.deleteJob(jobId)
+            }
+            result.onSuccess { fetchDiagnostics() }
+        }
+    }
+
+    fun stopRun(runId: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                repository.stopRun(runId)
+            }
+        }
     }
 
     fun wipeSystem(context: Context) {

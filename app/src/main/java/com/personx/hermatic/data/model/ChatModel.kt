@@ -1,6 +1,7 @@
 package com.personx.hermatic.data.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.*
 
@@ -14,7 +15,8 @@ data class Message(
     @Transient val timestamp: Long = System.currentTimeMillis(),
     @Transient val imageUrl: String? = null, // Local or base64
     @Transient val audioUrl: String? = null,
-    @Transient val transcription: String? = null
+    @Transient val transcription: String? = null,
+    @Transient val toolResults: Map<String, String>? = null
 )
 
 @Serializable
@@ -153,4 +155,59 @@ data class Session(
 @Serializable
 data class SessionListResponse(
     val data: List<Session>
+)
+
+@Serializable
+data class HealthDetailed(
+    val status: String,
+    val active_sessions: Int? = null,
+    val running_agents: Int? = null,
+    val resource_usage: JsonElement? = null
+)
+
+@Serializable
+data class JobCreateRequest(
+    val prompt: String,
+    val schedule: String = "*/30 * * * *",
+    val skills: List<String>? = null,
+    val provider: String? = null,
+    val delivery: JsonElement? = null
+)
+
+@Serializable
+data class StopRunResponse(
+    val status: String
+)
+
+@Serializable
+data class SessionChatRequest(
+    val input: String,
+    val instructions: String? = null,
+    val conversation_history: List<Message>? = null
+)
+
+enum class ToolCallStatus { Running, Completed, Failed }
+
+data class DisplayToolCall(
+    val callId: String,
+    val name: String,
+    val arguments: String,
+    val result: String? = null,
+    val status: ToolCallStatus = ToolCallStatus.Running
+)
+
+sealed class ChatStreamEvent {
+    data class TextDelta(val content: String) : ChatStreamEvent()
+    data class ToolStarted(val name: String, val arguments: String, val callId: String) : ChatStreamEvent()
+    data class ToolCompleted(val callId: String, val output: String) : ChatStreamEvent()
+    data object RunCompleted : ChatStreamEvent()
+}
+
+@Serializable
+data class ChatStreamEventData(
+    val content: String? = null,
+    val name: String? = null,
+    val arguments: String? = null,
+    @SerialName("call_id") val call_id: String? = null,
+    val output: String? = null
 )

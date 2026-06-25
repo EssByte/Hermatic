@@ -34,6 +34,10 @@ class HermesRepository(
         return chatDao.getAllSessionIds()
     }
 
+    suspend fun insertMessage(entity: ChatMessageEntity) {
+        chatDao.insertMessage(entity)
+    }
+
     suspend fun getModels(): List<ModelInfo> {
         return try {
             api.getModels().data
@@ -71,6 +75,24 @@ class HermesRepository(
             api.getJobs().string()
         } catch (e: Exception) {
             "Unavailable"
+        }
+    }
+
+    suspend fun createJob(prompt: String, schedule: String = "*/30 * * * *"): Result<String> {
+        return try {
+            val response = api.createJob(JobCreateRequest(prompt = prompt, schedule = schedule))
+            Result.success(response.string())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteJob(id: String): Result<Unit> {
+        return try {
+            api.deleteJob(id)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
@@ -127,6 +149,55 @@ class HermesRepository(
         }
     }.flowOn(Dispatchers.IO)
 
+    fun sessionChatStream(
+        sessionId: String,
+        input: String,
+        instructions: String?
+    ): Flow<ChatStreamEvent> = flow {
+        val request = SessionChatRequest(input = input, instructions = instructions)
+        val responseBody = api.sessionChatStream(sessionId, request)
+
+        responseBody.byteStream().bufferedReader().useLines { lines ->
+            var currentEvent: String? = null
+            lines.forEach { line ->
+                when {
+                    line.startsWith("event: ") -> {
+                        currentEvent = line.substring(7).trim()
+                    }
+                    line.startsWith("data: ") -> {
+                        val data = line.substring(6).trim()
+                        if (data.isNotEmpty() && currentEvent != null) {
+                            val event = currentEvent!!
+                            currentEvent = null
+                            try {
+                                val evData = json.decodeFromString<ChatStreamEventData>(data)
+                                when (event) {
+                                    "assistant.delta" -> {
+                                        evData.content?.let { emit(ChatStreamEvent.TextDelta(it)) }
+                                    }
+                                    "tool.started" -> {
+                                        val name = evData.name ?: "unknown"
+                                        val args = evData.arguments ?: "{}"
+                                        val callId = evData.call_id ?: "call_${System.currentTimeMillis()}"
+                                        emit(ChatStreamEvent.ToolStarted(name, args, callId))
+                                    }
+                                    "tool.completed" -> {
+                                        val callId = evData.call_id ?: ""
+                                        val output = evData.output ?: ""
+                                        emit(ChatStreamEvent.ToolCompleted(callId, output))
+                                    }
+                                    "run.completed" -> {
+                                        emit(ChatStreamEvent.RunCompleted)
+                                    }
+                                }
+                            } catch (_: Exception) { }
+                        }
+                    }
+                }
+            }
+        }
+    }.flowOn(Dispatchers.IO)
+
     suspend fun clearHistory(sessionId: String) {
         chatDao.clearSessionHistory(sessionId)
     }
@@ -134,6 +205,23 @@ class HermesRepository(
     suspend fun checkHealth(): Result<Unit> {
         return try {
             api.checkHealth()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun checkHealthDetailed(): Result<HealthDetailed> {
+        return try {
+            Result.success(api.checkHealthDetailed())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun stopRun(runId: String): Result<Unit> {
+        return try {
+            api.stopRun(runId)
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

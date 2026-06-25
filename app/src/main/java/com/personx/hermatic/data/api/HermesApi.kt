@@ -34,6 +34,10 @@ interface HermesApi {
     @GET("api/sessions/{id}/messages")
     suspend fun getSessionMessages(@Path("id") id: String): List<Message>
 
+    @Streaming
+    @POST("api/sessions/{id}/chat/stream")
+    suspend fun sessionChatStream(@Path("id") id: String, @Body request: SessionChatRequest): ResponseBody
+
     // Runs API
     @POST("v1/runs")
     suspend fun createRun(@Body request: ChatRequest): RunResponse
@@ -45,6 +49,18 @@ interface HermesApi {
     @GET("api/jobs")
     suspend fun getJobs(): ResponseBody
 
+    @POST("api/jobs")
+    suspend fun createJob(@Body request: JobCreateRequest): ResponseBody
+
+    @DELETE("api/jobs/{id}")
+    suspend fun deleteJob(@Path("id") id: String): ResponseBody
+
     @GET("health")
     suspend fun checkHealth(): ResponseBody
+
+    @GET("health/detailed")
+    suspend fun checkHealthDetailed(): HealthDetailed
+
+    @POST("v1/runs/{id}/stop")
+    suspend fun stopRun(@Path("id") id: String): StopRunResponse
 }
