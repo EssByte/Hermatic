@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +46,9 @@ fun ChatScreen(viewModel: HermesViewModel) {
     val isTyping by viewModel.isHermesTyping.collectAsState()
     val sessions by viewModel.sessions.collectAsState()
     val currentSessionId by viewModel.currentSessionId.collectAsState()
+    val sessionTitles = remember(sessions) {
+        sessions.associateWith { viewModel.getSessionTitle(it) ?: it.take(8).uppercase() }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -74,8 +78,11 @@ fun ChatScreen(viewModel: HermesViewModel) {
         SessionSwitcher(
             sessions = sessions,
             currentSessionId = currentSessionId,
+            sessionTitles = sessionTitles,
             onSessionSelected = { viewModel.switchSession(it) },
-            onNewSession = { viewModel.startNewSession() }
+            onNewSession = { viewModel.startNewSession() },
+            onRenameSession = { id, title -> viewModel.renameSession(id, title) },
+            onDeleteSession = { viewModel.deleteLocalSession(it) }
         )
 
         BoxWithConstraints(modifier = Modifier.weight(1f).padding(horizontal = 16.dp)) {
@@ -91,7 +98,12 @@ fun ChatScreen(viewModel: HermesViewModel) {
                         else -> emptyList()
                     }
 
-                    ChatHistory(messages = history, maxBubbleWidth = maxBubbleWidth)
+                    ChatHistory(
+                        messages = history,
+                        maxBubbleWidth = maxBubbleWidth,
+                        onDeleteMessage = { viewModel.deleteMessage(it) },
+                        onEditMessage = { id, content -> viewModel.editMessage(id, content) }
+                    )
                     if (isTyping) {
                         Row(
                             Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp),

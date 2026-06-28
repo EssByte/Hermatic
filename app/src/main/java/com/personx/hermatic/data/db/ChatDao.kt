@@ -23,4 +23,10 @@ interface ChatDao {
     
     @Query("SELECT DISTINCT sessionId FROM messages")
     fun getAllSessionIds(): Flow<List<String>>
+
+    @Query("DELETE FROM messages WHERE id = :messageId")
+    suspend fun deleteMessageById(messageId: Long)
+
+    @Query("UPDATE messages SET content = :newContent WHERE id = :messageId")
+    suspend fun updateMessageContent(messageId: Long, newContent: String)
 }

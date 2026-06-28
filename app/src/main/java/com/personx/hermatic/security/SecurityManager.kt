@@ -128,6 +128,18 @@ class SecurityManager(context: Context) {
         sharedPreferences.edit().putBoolean("auto_tts_enabled", enabled).apply()
     }
 
+    fun saveSessionTitle(sessionId: String, title: String) {
+        sharedPreferences.edit().putString("session_title_$sessionId", title).apply()
+    }
+
+    fun getSessionTitle(sessionId: String): String? {
+        return sharedPreferences.getString("session_title_$sessionId", null)
+    }
+
+    fun removeSessionTitle(sessionId: String) {
+        sharedPreferences.edit().remove("session_title_$sessionId").apply()
+    }
+
     fun wipeAllData(context: Context) {
         sharedPreferences.edit().clear().apply()
         context.deleteDatabase("hermes_database")

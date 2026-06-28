@@ -74,6 +74,15 @@ class HermesViewModel(
     private val _isHermesTyping = MutableStateFlow(false)
     val isHermesTyping: StateFlow<Boolean> = _isHermesTyping
 
+    private val _isVoiceListening = MutableStateFlow(false)
+    val isVoiceListening: StateFlow<Boolean> = _isVoiceListening
+
+    private val _voiceTranscription = MutableStateFlow("")
+    val voiceTranscription: StateFlow<String> = _voiceTranscription
+
+    private val _voiceRmsLevel = MutableStateFlow(0f)
+    val voiceRmsLevel: StateFlow<Float> = _voiceRmsLevel
+
     private var currentSendJob: Job? = null
 
     private val _healthDetailed = MutableStateFlow<HealthDetailed?>(null)
@@ -248,30 +257,33 @@ class HermesViewModel(
                             repository.insertMessage(userMsg.toEntity(_currentSessionId.value))
                         }
                         _isHermesTyping.value = false
-                        when (event) {
-                            is ChatStreamEvent.TextDelta -> {
-                                botContent.append(event.content)
-                                streamingBotResponse.value = botContent.toString()
-                            }
-                            is ChatStreamEvent.ToolStarted -> {
-                                toolCalls.add(DisplayToolCall(
-                                    callId = event.callId,
-                                    name = event.name,
-                                    arguments = event.arguments,
-                                    status = ToolCallStatus.Running
-                                ))
-                            }
-                            is ChatStreamEvent.ToolCompleted -> {
-                                toolResults[event.callId] = event.output
-                                val idx = toolCalls.indexOfFirst { it.callId == event.callId }
-                                if (idx >= 0) {
-                                    toolCalls[idx] = toolCalls[idx].copy(
-                                        result = event.output,
-                                        status = ToolCallStatus.Completed
-                                    )
+                            when (event) {
+                                is ChatStreamEvent.TextDelta -> {
+                                    botContent.append(event.content)
+                                    streamingBotResponse.value = botContent.toString()
+                                    if (_isAutoTtsEnabled.value) {
+                                        _ttsEvent.emit(event.content)
+                                    }
                                 }
-                            }
-                            is ChatStreamEvent.RunCompleted -> { }
+                                is ChatStreamEvent.ToolStarted -> {
+                                    toolCalls.add(DisplayToolCall(
+                                        callId = event.callId,
+                                        name = event.name,
+                                        arguments = event.arguments,
+                                        status = ToolCallStatus.Running
+                                    ))
+                                }
+                                is ChatStreamEvent.ToolCompleted -> {
+                                    toolResults[event.callId] = event.output
+                                    val idx = toolCalls.indexOfFirst { it.callId == event.callId }
+                                    if (idx >= 0) {
+                                        toolCalls[idx] = toolCalls[idx].copy(
+                                            result = event.output,
+                                            status = ToolCallStatus.Completed
+                                        )
+                                    }
+                                }
+                                is ChatStreamEvent.RunCompleted -> { }
                         }
                     }
                 } catch (_: Exception) {
@@ -286,6 +298,9 @@ class HermesViewModel(
                         _isHermesTyping.value = false
                         botContent.append(chunk)
                         streamingBotResponse.value = botContent.toString()
+                        if (_isAutoTtsEnabled.value) {
+                            _ttsEvent.emit(chunk)
+                        }
                     }
                 }
 
@@ -324,6 +339,22 @@ class HermesViewModel(
         streamingBotResponse.value = null
     }
 
+    fun setVoiceListening(listening: Boolean) {
+        _isVoiceListening.value = listening
+        if (!listening) {
+            _voiceTranscription.value = ""
+            _voiceRmsLevel.value = 0f
+        }
+    }
+
+    fun setVoiceTranscription(text: String) {
+        _voiceTranscription.value = text
+    }
+
+    fun setVoiceRmsLevel(level: Float) {
+        _voiceRmsLevel.value = level
+    }
+
     private val _ttsEvent = MutableSharedFlow<String>()
     val ttsEvent: SharedFlow<String> = _ttsEvent
 
@@ -340,6 +371,34 @@ class HermesViewModel(
     
     fun switchSession(id: String) {
         _currentSessionId.value = id
+    }
+
+    fun renameCurrentSession(title: String) {
+        securityManager.saveSessionTitle(_currentSessionId.value, title)
+    }
+
+    fun renameSession(sessionId: String, title: String) {
+        securityManager.saveSessionTitle(sessionId, title)
+    }
+
+    fun getSessionTitle(sessionId: String): String? = securityManager.getSessionTitle(sessionId)
+
+    fun deleteLocalSession(sessionId: String) {
+        viewModelScope.launch {
+            repository.clearHistory(sessionId)
+            securityManager.removeSessionTitle(sessionId)
+            if (sessionId == _currentSessionId.value) {
+                startNewSession()
+            }
+        }
+    }
+
+    fun deleteMessage(messageId: Long) {
+        viewModelScope.launch { repository.deleteMessage(messageId) }
+    }
+
+    fun editMessage(messageId: Long, newContent: String) {
+        viewModelScope.launch { repository.editMessage(messageId, newContent) }
     }
 
     fun setSelfDestructPeriod(periodMs: Long) {
@@ -416,6 +475,96 @@ class HermesViewModel(
             withContext(Dispatchers.IO) {
                 repository.stopRun(runId)
             }
+        }
+    }
+
+    fun approveRun(runId: String, approved: Boolean, reason: String? = null) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                repository.approveRun(runId, approved, reason)
+            }
+        }
+    }
+
+    // ── Jobs API ──
+
+    fun getJob(jobId: String) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { repository.getJob(jobId) }
+            result.onSuccess { /* could expose via state if needed */ }
+        }
+    }
+
+    fun updateJob(jobId: String, prompt: String? = null, schedule: String? = null) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { repository.updateJob(jobId, prompt, schedule) }
+            result.onSuccess { fetchDiagnostics() }
+        }
+    }
+
+    fun pauseJob(jobId: String) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { repository.pauseJob(jobId) }
+            result.onSuccess { fetchDiagnostics() }
+        }
+    }
+
+    fun resumeJob(jobId: String) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { repository.resumeJob(jobId) }
+            result.onSuccess { fetchDiagnostics() }
+        }
+    }
+
+    fun triggerJob(jobId: String) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { repository.runJob(jobId) }
+            result.onSuccess { fetchDiagnostics() }
+        }
+    }
+
+    // ── Responses API ──
+
+    private val _responseResult = MutableStateFlow<ResponseData?>(null)
+    val responseResult: StateFlow<ResponseData?> = _responseResult
+
+    fun createResponse(input: String, instructions: String? = null, previousResponseId: String? = null) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { repository.createResponse(input, instructions, previousResponseId) }
+            result.onSuccess { _responseResult.value = it }
+        }
+    }
+
+    fun getResponse(id: String) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { repository.getResponse(id) }
+            result.onSuccess { _responseResult.value = it }
+        }
+    }
+
+    fun deleteResponse(id: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.deleteResponse(id) }
+        }
+    }
+
+    // ── Sessions API ──
+
+    fun renameServerSession(sessionId: String, title: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.updateServerSession(sessionId, title = title) }
+        }
+    }
+
+    fun deleteServerSession(sessionId: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.deleteServerSession(sessionId) }
+        }
+    }
+
+    fun forkServerSession(sessionId: String, title: String? = null) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repository.forkSession(sessionId, title) }
         }
     }
 

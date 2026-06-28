@@ -28,6 +28,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -302,11 +303,13 @@ fun SettingsScreen(viewModel: HermesViewModel, onBack: () -> Unit) {
         item {
             SettingsSection("SCHEDULED_JOBS") {
                 var jobPrompt by remember { mutableStateOf("") }
+                var jobId by remember { mutableStateOf("") }
+                var jobUpdatePrompt by remember { mutableStateOf("") }
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = jobPrompt,
                         onValueChange = { jobPrompt = it },
-                        label = { Text("JOB_PROMPT", style = MaterialTheme.typography.labelSmall) },
+                        label = { Text("NEW_JOB_PROMPT", style = MaterialTheme.typography.labelSmall) },
                         placeholder = { Text("e.g. Summarize today's logs") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -320,26 +323,139 @@ fun SettingsScreen(viewModel: HermesViewModel, onBack: () -> Unit) {
                             unfocusedContainerColor = Color.Transparent
                         )
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = {
-                                if (jobPrompt.isNotBlank()) {
-                                    viewModel.createJob(jobPrompt)
-                                    jobPrompt = ""
-                                }
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("CREATE_JOB", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                    Button(
+                        onClick = {
+                            if (jobPrompt.isNotBlank()) {
+                                viewModel.createJob(jobPrompt)
+                                jobPrompt = ""
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("CREATE_JOB", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall) }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                    OutlinedTextField(
+                        value = jobId,
+                        onValueChange = { jobId = it },
+                        label = { Text("JOB_ID", style = MaterialTheme.typography.labelSmall) },
+                        placeholder = { Text("Paste job ID from diagnostics") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent
+                        )
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Button(onClick = { if (jobId.isNotBlank()) viewModel.deleteJob(jobId) }, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f)) {
+                            Text("DELETE", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, maxLines = 1)
                         }
-                        Button(
-                            onClick = { viewModel.fetchDiagnostics() },
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("REFRESH", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                        Button(onClick = { if (jobId.isNotBlank()) viewModel.pauseJob(jobId) }, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f)) {
+                            Text("PAUSE", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        }
+                        Button(onClick = { if (jobId.isNotBlank()) viewModel.resumeJob(jobId) }, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f)) {
+                            Text("RESUME", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        }
+                        Button(onClick = { if (jobId.isNotBlank()) viewModel.triggerJob(jobId) }, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f)) {
+                            Text("RUN", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, maxLines = 1)
                         }
                     }
+                    Button(onClick = { viewModel.fetchDiagnostics() }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        Text("REFRESH_DIAGNOSTICS", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+
+        item {
+            SettingsSection("SESSION_MANAGEMENT") {
+                var sessionRenameId by remember { mutableStateOf("") }
+                var sessionNewTitle by remember { mutableStateOf("") }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = sessionRenameId,
+                        onValueChange = { sessionRenameId = it },
+                        label = { Text("SESSION_ID", style = MaterialTheme.typography.labelSmall) },
+                        placeholder = { Text("Session UUID") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent
+                        )
+                    )
+                    OutlinedTextField(
+                        value = sessionNewTitle,
+                        onValueChange = { sessionNewTitle = it },
+                        label = { Text("NEW_TITLE", style = MaterialTheme.typography.labelSmall) },
+                        placeholder = { Text("Friendly name") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent
+                        )
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { if (sessionRenameId.isNotBlank() && sessionNewTitle.isNotBlank()) viewModel.renameServerSession(sessionRenameId, sessionNewTitle) },
+                            shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f)
+                        ) { Text("RENAME", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall) }
+                        Button(
+                            onClick = { if (sessionRenameId.isNotBlank()) viewModel.deleteServerSession(sessionRenameId) },
+                            shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFBB0000))
+                        ) { Text("DELETE", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, color = Color.White) }
+                    }
+                }
+            }
+        }
+
+        item {
+            SettingsSection("RESPONSES_API") {
+                var responseInput by remember { mutableStateOf("") }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = responseInput,
+                        onValueChange = { responseInput = it },
+                        label = { Text("INPUT", style = MaterialTheme.typography.labelSmall) },
+                        placeholder = { Text("e.g. What files are in my project?") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = false,
+                        minLines = 2,
+                        textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent
+                        )
+                    )
+                    Button(
+                        onClick = {
+                            if (responseInput.isNotBlank()) {
+                                viewModel.createResponse(responseInput)
+                                responseInput = ""
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("SEND_RESPONSE_REQUEST", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall) }
                 }
             }
         }

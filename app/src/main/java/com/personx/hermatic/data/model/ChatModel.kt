@@ -8,15 +8,16 @@ import kotlinx.serialization.json.*
 @Serializable
 data class Message(
     val role: String,
-    val content: String, // Kept as String for DB and simple use
+    val content: String,
     val tool_calls: List<ToolCall>? = null,
     val tool_call_id: String? = null,
     val name: String? = null,
     @Transient val timestamp: Long = System.currentTimeMillis(),
-    @Transient val imageUrl: String? = null, // Local or base64
+    @Transient val imageUrl: String? = null,
     @Transient val audioUrl: String? = null,
     @Transient val transcription: String? = null,
-    @Transient val toolResults: Map<String, String>? = null
+    @Transient val toolResults: Map<String, String>? = null,
+    @Transient val dbId: Long = 0
 )
 
 @Serializable
@@ -210,4 +211,63 @@ data class ChatStreamEventData(
     val arguments: String? = null,
     @SerialName("call_id") val call_id: String? = null,
     val output: String? = null
+)
+
+@Serializable
+data class ResponseCreateRequest(
+    val model: String = "hermes-agent",
+    val input: String,
+    val instructions: String? = null,
+    val store: Boolean = true,
+    val previous_response_id: String? = null
+)
+
+@Serializable
+data class ResponseData(
+    val id: String,
+    val status: String? = null,
+    val model: String? = null,
+    val output: List<ResponseOutputItem>? = null,
+    val usage: JsonElement? = null
+)
+
+@Serializable
+data class ResponseOutputItem(
+    val type: String,
+    val name: String? = null,
+    val arguments: String? = null,
+    @SerialName("call_id") val call_id: String? = null,
+    val output: String? = null,
+    val role: String? = null,
+    val content: List<ResponseContentPart>? = null
+)
+
+@Serializable
+data class ResponseContentPart(
+    val type: String,
+    val text: String? = null
+)
+
+@Serializable
+data class SessionUpdateRequest(
+    val title: String? = null,
+    @SerialName("end_reason") val end_reason: String? = null
+)
+
+@Serializable
+data class SessionForkRequest(
+    val title: String? = null
+)
+
+@Serializable
+data class JobUpdateRequest(
+    val prompt: String? = null,
+    val schedule: String? = null,
+    val skills: List<String>? = null
+)
+
+@Serializable
+data class ApprovalRequest(
+    val approved: Boolean,
+    val reason: String? = null
 )

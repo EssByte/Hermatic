@@ -23,7 +23,8 @@ fun ChatMessageEntity.toMessage() = Message(
     timestamp = timestamp,
     imageUrl = imageUrl,
     audioUrl = audioUrl,
-    transcription = transcription
+    transcription = transcription,
+    dbId = id
 )
 
 fun Message.toEntity(sessionId: String) = ChatMessageEntity(

@@ -17,6 +17,7 @@ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
     private var speechRecognizer: SpeechRecognizer? = null
     private var isTtsReady = false
     private var currentTranscription = StringBuilder()
+    private var isStreaming = false
     private var finalResultCallback: ((String) -> Unit)? = null
 
     init {
@@ -51,11 +52,31 @@ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
         } else false
     }
 
+    fun speakQueue(text: String): Boolean {
+        if (tts == null) {
+            initializeTts()
+            return false
+        }
+        return if (isTtsReady) {
+            tts?.speak(text, TextToSpeech.QUEUE_ADD, null, "HERMES_VOICE")
+            true
+        } else false
+    }
+
+    fun startStreaming() {
+        isStreaming = true
+    }
+
+    fun stopStreaming() {
+        isStreaming = false
+    }
+
     fun stopSpeaking() {
+        isStreaming = false
         tts?.stop()
     }
 
-    fun startListening(onPartialResult: (String) -> Unit) {
+    fun startListening(onPartialResult: (String) -> Unit, onRmsChanged: (Float) -> Unit = {}) {
         currentTranscription.clear()
         finalResultCallback = null
         if (speechRecognizer == null) {
@@ -71,7 +92,10 @@ class VoiceManager(private val context: Context) : TextToSpeech.OnInitListener {
         speechRecognizer?.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {}
             override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onRmsChanged(rmsdB: Float) {
+                val normalized = (rmsdB / 30f).coerceIn(0f, 1f)
+                onRmsChanged(normalized)
+            }
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
             override fun onError(error: Int) {

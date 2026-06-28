@@ -70,6 +70,8 @@ class HermesRepository(
         }
     }
 
+    // ── Jobs API ──
+
     suspend fun getJobs(): String {
         return try {
             api.getJobs().string()
@@ -78,10 +80,27 @@ class HermesRepository(
         }
     }
 
+    suspend fun getJob(id: String): Result<String> {
+        return try {
+            Result.success(api.getJob(id).string())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun createJob(prompt: String, schedule: String = "*/30 * * * *"): Result<String> {
         return try {
             val response = api.createJob(JobCreateRequest(prompt = prompt, schedule = schedule))
             Result.success(response.string())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateJob(id: String, prompt: String? = null, schedule: String? = null): Result<Unit> {
+        return try {
+            api.updateJob(id, JobUpdateRequest(prompt = prompt, schedule = schedule))
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -95,6 +114,66 @@ class HermesRepository(
             Result.failure(e)
         }
     }
+
+    suspend fun pauseJob(id: String): Result<Unit> {
+        return try { api.pauseJob(id); Result.success(Unit) } catch (e: Exception) { Result.failure(e) }
+    }
+
+    suspend fun resumeJob(id: String): Result<Unit> {
+        return try { api.resumeJob(id); Result.success(Unit) } catch (e: Exception) { Result.failure(e) }
+    }
+
+    suspend fun runJob(id: String): Result<Unit> {
+        return try { api.runJob(id); Result.success(Unit) } catch (e: Exception) { Result.failure(e) }
+    }
+
+    // ── Responses API ──
+
+    suspend fun createResponse(input: String, instructions: String? = null, previousResponseId: String? = null): Result<ResponseData> {
+        return try {
+            Result.success(api.createResponse(ResponseCreateRequest(input = input, instructions = instructions, previous_response_id = previousResponseId)))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getResponse(id: String): Result<ResponseData> {
+        return try {
+            Result.success(api.getResponse(id))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteResponse(id: String): Result<Unit> {
+        return try { api.deleteResponse(id); Result.success(Unit) } catch (e: Exception) { Result.failure(e) }
+    }
+
+    // ── Sessions API ──
+
+    suspend fun getServerSession(id: String): Result<Session> {
+        return try { Result.success(api.getSession(id)) } catch (e: Exception) { Result.failure(e) }
+    }
+
+    suspend fun updateServerSession(id: String, title: String? = null, endReason: String? = null): Result<Session> {
+        return try { Result.success(api.updateSession(id, SessionUpdateRequest(title = title, end_reason = endReason))) } catch (e: Exception) { Result.failure(e) }
+    }
+
+    suspend fun deleteServerSession(id: String): Result<Unit> {
+        return try { api.deleteSession(id); Result.success(Unit) } catch (e: Exception) { Result.failure(e) }
+    }
+
+    suspend fun forkSession(id: String, title: String? = null): Result<Session> {
+        return try { Result.success(api.forkSession(id, SessionForkRequest(title = title))) } catch (e: Exception) { Result.failure(e) }
+    }
+
+    // ── Runs API ──
+
+    suspend fun approveRun(runId: String, approved: Boolean, reason: String? = null): Result<Unit> {
+        return try { api.approveRun(runId, ApprovalRequest(approved = approved, reason = reason)); Result.success(Unit) } catch (e: Exception) { Result.failure(e) }
+    }
+
+    // ── Chat Streaming ──
 
     fun chatStream(
         sessionId: String,
@@ -200,6 +279,14 @@ class HermesRepository(
 
     suspend fun clearHistory(sessionId: String) {
         chatDao.clearSessionHistory(sessionId)
+    }
+
+    suspend fun deleteMessage(messageId: Long) {
+        chatDao.deleteMessageById(messageId)
+    }
+
+    suspend fun editMessage(messageId: Long, newContent: String) {
+        chatDao.updateMessageContent(messageId, newContent)
     }
 
     suspend fun checkHealth(): Result<Unit> {
